@@ -6,6 +6,9 @@ local RAH = RetailAH
 local panel = RAH.AddTab("Buy")
 local STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
 local STAR_INLINE = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12:12:0:0|t "
+-- Transmog pink, as retail uses for appearances.
+local NEW_LOOK = "  |cffff80ffnew look|r"
+local UNCOLLECTED_TIP = "You haven't collected this appearance"
 
 local Buy = {}
 RAH.Buy = Buy
@@ -64,7 +67,7 @@ resultCount:SetJustifyH("RIGHT")
 -- filter panel
 
 local filters = CreateFrame("Frame", nil, panel)
-filters:SetSize(220, 262)
+filters:SetSize(220, 284)
 filters:SetPoint("TOPLEFT", filterButton, "BOTTOMLEFT", 0, -4)
 filters:SetFrameStrata("DIALOG")
 filters:SetBackdrop({
@@ -84,7 +87,22 @@ local exactCheck = RAH.CreateCheck(filters, "Exact match")
 exactCheck:SetPoint("TOPLEFT", usableCheck, "BOTTOMLEFT", 0, 2)
 
 local levelLabel = RAH.CreateLabel(filters, "Level Range", "GameFontNormalSmall")
-levelLabel:SetPoint("TOPLEFT", exactCheck, "BOTTOMLEFT", 4, -8)
+local uncollectedCheck = RAH.CreateCheck(filters, "Uncollected appearances only")
+uncollectedCheck:SetPoint("TOPLEFT", exactCheck, "BOTTOMLEFT", 0, 2)
+uncollectedCheck.label:SetTextColor(1, 0.5, 1)
+uncollectedCheck:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:AddLine("Uncollected appearances only")
+	if RAH.appearances then
+		GameTooltip:AddLine("Only gear whose look your account hasn't collected for transmog yet.", 1, 1, 1, true)
+	else
+		GameTooltip:AddLine("This realm doesn't track transmog collections.", 1, 0.3, 0.3, true)
+	end
+	GameTooltip:Show()
+end)
+uncollectedCheck:SetScript("OnLeave", function () GameTooltip:Hide() end)
+
+levelLabel:SetPoint("TOPLEFT", uncollectedCheck, "BOTTOMLEFT", 4, -8)
 local minLevel = RAH.CreateEditBox(filters, 36, true)
 minLevel:SetMaxLetters(2)
 minLevel:SetPoint("TOPLEFT", levelLabel, "BOTTOMLEFT", 4, -4)
@@ -117,6 +135,7 @@ local function saveFilters()
 	local f = RetailAHDB.filters
 	f.usable = usableCheck:GetChecked() and true or nil
 	f.exact = exactCheck:GetChecked() and true or nil
+	f.uncollected = uncollectedCheck:GetChecked() and true or nil
 	f.minLevel = tonumber(minLevel:GetText())
 	f.maxLevel = tonumber(maxLevel:GetText())
 	f.qualities = {}
@@ -129,6 +148,8 @@ local function loadFilters()
 	local f = RetailAHDB.filters
 	usableCheck:SetChecked(f.usable)
 	exactCheck:SetChecked(f.exact)
+	uncollectedCheck:SetChecked(f.uncollected and RAH.appearances)
+	RAH.SetEnabled(uncollectedCheck, RAH.appearances)
 	minLevel:SetText(f.minLevel and tostring(f.minLevel) or "")
 	maxLevel:SetText(f.maxLevel and tostring(f.maxLevel) or "")
 	for _, cb in ipairs(rarityChecks) do cb:SetChecked(f.qualities and f.qualities[cb.quality]) end
@@ -136,7 +157,7 @@ end
 
 local function filtersActive()
 	local f = RetailAHDB.filters
-	if f.usable or f.exact or f.minLevel or f.maxLevel then return true end
+	if f.usable or f.exact or f.minLevel or f.maxLevel or (f.uncollected and RAH.appearances) then return true end
 	return f.qualities and next(f.qualities) ~= nil
 end
 
@@ -144,7 +165,7 @@ local function updateFilterButton()
 	filterButton:SetText(filtersActive() and "|cff00ff00Filters|r" or "Filters")
 end
 
-for _, cb in ipairs({ usableCheck, exactCheck, unpack(rarityChecks) }) do
+for _, cb in ipairs({ usableCheck, exactCheck, uncollectedCheck, unpack(rarityChecks) }) do
 	cb:SetScript("OnClick", function () saveFilters(); updateFilterButton() end)
 end
 for _, eb in ipairs({ minLevel, maxLevel }) do
@@ -292,11 +313,15 @@ local resultsPane = RAH.CreateInset(panel)
 resultsPane:SetPoint("TOPLEFT", categoryPane, "TOPRIGHT", 6, 0)
 resultsPane:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
 
-local function itemName(entry)
-	local info = RAH.Item(entry)
+local function isUncollected(g)
+	return bit.band(g.flags or 0, RAH.GROUP_UNCOLLECTED) ~= 0
+end
+
+local function itemName(g)
+	local info = RAH.Item(g.entry)
 	if not info then return "|cff808080Loading...|r" end
 	local _, _, _, hex = RAH.QualityColor(info.quality)
-	return (RAH.IsFavorite(entry) and STAR_INLINE or "") .. hex .. info.name .. "|r"
+	return (RAH.IsFavorite(g.entry) and STAR_INLINE or "") .. hex .. info.name .. "|r" .. (isUncollected(g) and NEW_LOOK or "")
 end
 
 local function itemIcon(entry)
@@ -326,7 +351,7 @@ local results = RAH.CreateList(resultsPane, {
 			end,
 			sort = function (g) return g.auctions > 0 and g.price or math.huge end },
 		{ title = "Name", icon = function (g) return itemIcon(g.entry) end,
-			text = function (g) return itemName(g.entry) end,
+			text = function (g) return itemName(g) end,
 			sort = function (g) return sortName(g.entry) end },
 		{ title = "Level", width = 60, align = "CENTER", defaultDesc = true,
 			text = function (g) local l = sortLevel(g.entry); return l > 0 and tostring(l) or "" end,
@@ -354,6 +379,7 @@ local results = RAH.CreateList(resultsPane, {
 		end
 	end,
 	tooltipExtra = function (g, tip)
+		if isUncollected(g) then tip:AddLine(UNCOLLECTED_TIP, 1, 0.5, 1) end
 		tip:AddLine(" ")
 		tip:AddLine("Right-click to " .. (RAH.IsFavorite(g.entry) and "remove from" or "add to") .. " favorites", 0.5, 0.8, 1)
 	end,
@@ -389,7 +415,7 @@ function Buy.Search()
 	searchBox:ClearFocus()
 	state.lastQuery = "search"
 	local f = RetailAHDB.filters
-	local flags = (f.usable and 1 or 0) + (f.exact and 2 or 0)
+	local flags = (f.usable and 1 or 0) + (f.exact and 2 or 0) + ((f.uncollected and RAH.appearances) and 4 or 0)
 	local mask = 0
 	if f.qualities then
 		for q in pairs(f.qualities) do mask = mask + bit.lshift(1, q) end
@@ -470,6 +496,7 @@ detailIcon:SetScript("OnEnter", function (self)
 	if state.detail then
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		GameTooltip:SetHyperlink("item:" .. state.detail.entry)
+		if isUncollected(state.detail) then GameTooltip:AddLine(UNCOLLECTED_TIP, 1, 0.5, 1) end
 		GameTooltip:Show()
 	end
 end)
@@ -520,7 +547,7 @@ local function updateDetailHeader()
 	local info = RAH.Item(g.entry)
 	if info then
 		local _, _, _, hex = RAH.QualityColor(info.quality)
-		detailName:SetText(hex .. info.name .. "|r")
+		detailName:SetText(hex .. info.name .. "|r" .. (isUncollected(g) and NEW_LOOK or ""))
 		detailIcon:SetItem(info.texture, info.quality)
 	else
 		detailName:SetText("|cff808080Loading...|r")
@@ -854,6 +881,12 @@ function loadDetail()
 	else
 		RAH.Request("I", { g.entry }, function (result, err)
 			if state.detailReq ~= token or not result then return end
+			-- The look may have been collected since the search (bought and equipped one).
+			local look = tonumber(result.meta[2])
+			if look then
+				g.flags = look == 2 and bit.bor(g.flags, RAH.GROUP_UNCOLLECTED) or bit.band(g.flags, bit.bnot(RAH.GROUP_UNCOLLECTED))
+				updateDetailHeader()
+			end
 			local list, selectedId = {}, state.selectedAuction and state.selectedAuction.id
 			state.selectedAuction = nil
 			for i, r in ipairs(result.rows) do

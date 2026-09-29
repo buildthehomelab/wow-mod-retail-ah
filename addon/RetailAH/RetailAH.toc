@@ -2,7 +2,7 @@
 ## Title: Retail Auction House
 ## Notes: The retail Buy / Sell / Auctions window, backed by the mod-retail-ah server module.
 ## Author: buildthehomelab
-## Version: 1.2.0
+## Version: 1.3.0
 ## OptionalDeps: DragonUI, Auctionator
 ## SavedVariables: RetailAHDB
 

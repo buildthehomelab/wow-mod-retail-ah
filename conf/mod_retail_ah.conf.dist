@@ -52,3 +52,13 @@ RetailAH.SearchCooldownMs = 250
 #
 
 RetailAH.ReagentBank = 1
+
+#
+#    RetailAH.Transmog
+#        Description: With mod-transmog-plus installed, mark auctions whose appearance the
+#                     player's account hasn't collected, and offer an "uncollected appearances
+#                     only" search filter. Does nothing without that module.
+#        Default:     1
+#
+
+RetailAH.Transmog = 1

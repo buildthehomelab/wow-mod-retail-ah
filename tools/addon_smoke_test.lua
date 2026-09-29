@@ -7,6 +7,8 @@ unpack = table.unpack
 bit = {
 	band = function (a, b) return math.floor(a) & math.floor(b) end,
 	lshift = function (a, n) return math.floor(a) << n end,
+	bor = function (a, b) return math.floor(a) | math.floor(b) end,
+	bnot = function (a) return ~math.floor(a) end,
 }
 function wipe(t) for k in pairs(t) do t[k] = nil end return t end
 _G = _G
@@ -195,15 +197,15 @@ local function serve(msg)
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
-	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:1")
+	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:3")
 	elseif cmd == "S" or cmd == "F" then
 		reply("SR:" .. req .. ":2:0")
-		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,0")
+		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,8")
 		reply("SE:" .. req)
 	elseif cmd == "C" then
 		reply("CR:" .. req .. ":2589"); reply("CD:" .. req .. ":10,20,0;13,27,7"); reply("CE:" .. req)
 	elseif cmd == "I" then
-		reply("IR:" .. req .. ":15210"); reply("ID:" .. req .. ":101,1,3000,3150,45000,7200,4,-7,55;102,1,0,5000,0,600,1,0,0"); reply("IE:" .. req)
+		reply("IR:" .. req .. ":15210:2"); reply("ID:" .. req .. ":101,1,3000,3150,45000,7200,4,-7,55;102,1,0,5000,0,600,1,0,0"); reply("IE:" .. req)
 	elseif cmd == "Q" then reply("QR:" .. req .. ":2589:5:50:0")
 	elseif cmd == "B" then reply("BR:" .. req .. ":ok:5:50:5:50")
 	elseif cmd == "P" then
@@ -256,7 +258,21 @@ end
 
 step("login", function () fire("ADDON_LOADED", "RetailAH"); fire("PLAYER_LOGIN") end)
 step("open auction house", function () fire("AUCTION_HOUSE_SHOW") end)
-step("server ready", function () assert(RAH.serverReady, "not ready after HELLO") end)
+step("server ready", function ()
+	assert(RAH.serverReady, "not ready after HELLO")
+	assert(RAH.appearances, "appearances flag not read")
+end)
+step("uncollected filter sends flag 4", function ()
+	RetailAHDB.filters.uncollected = true
+	local sent
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) sent = m; original(p, m, c, t) end
+	RAH.Buy.Search()
+	tick(0.5)
+	SendAddonMessage = original
+	assert(sent and sent:match("^S:%d+:4:"), "search did not carry the uncollected flag: " .. tostring(sent))
+	RetailAHDB.filters.uncollected = nil
+end)
 step("search", function () RAH.Buy.Search() end)
 step("open commodity", function () RAH.Buy.OpenDetail({ entry = 2589, price = 13, units = 47, auctions = 3, flags = 5 }) end)
 step("buy now", function ()
@@ -277,6 +293,9 @@ local function findText(pattern)
 		if f.__kind == "FontString" and f.__text:find(pattern) then return f.__text end
 	end
 end
+step("new look marker", function ()
+	assert(findText("new look"), "no new look marker in the item view")
+end)
 step("cheapest listing preselected, buy it", function ()
 	local price = findText("45,000") or findText("4g 50s") or findText("GoldIcon")
 	assert(price, "no buyout price shown beside Buy Now")
