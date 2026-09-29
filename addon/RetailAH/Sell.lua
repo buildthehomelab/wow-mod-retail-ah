@@ -1,6 +1,7 @@
 -- Sell tab: pick an item (right-click it in your bags, drop it on the slot, or pick it from the
 -- list), set quantity, price and duration, and post. Commodities are priced per unit and go up
--- as full stacks gathered from all your bags; other items get a buyout and an optional bid.
+-- as full stacks gathered from all your bags and, when the server has mod-reagent-bank-account,
+-- the reagent bank; other items get a buyout and an optional bid.
 
 local RAH = RetailAH
 
@@ -17,9 +18,15 @@ local state = {
 	settingPrice = false,  -- the addon is filling the price box, not the player
 	listingsReq = nil,
 	depositReq = nil,
+	bank = {},          -- reagent bank contents, entry -> amount
+	bankReq = nil,
 }
 
 local DURATIONS = { 12, 24, 48 }
+
+-- The server's "bag" for addressing a commodity by entry, so it can come from the reagent bank.
+local BAG_BY_ENTRY = 255
+local BANK_MARK = "|cff4fc3f7+|r"
 
 -----------------------------------------
 -- the form
@@ -121,13 +128,24 @@ local bagItems = RAH.CreateList(bagPane, {
 				return hex .. b.name .. "|r"
 			end,
 			sort = function (b) return b.name end },
-		{ title = "Count", width = 56, align = "RIGHT", text = function (b) return RAH.Number(b.count) end,
-			sort = function (b) return b.count end, defaultDesc = true },
+		{ title = "Count", width = 64, align = "RIGHT",
+			text = function (b)
+				local n = RAH.Number(b.count + (b.bank or 0))
+				return (b.bank or 0) > 0 and (n .. BANK_MARK) or n
+			end,
+			sort = function (b) return b.count + (b.bank or 0) end, defaultDesc = true },
 	},
 	defaultSort = 1,
 	link = function (b) return b.link end,
+	tooltipExtra = function (b, tip)
+		if (b.bank or 0) > 0 then
+			tip:AddLine(" ")
+			tip:AddDoubleLine("In your bags", RAH.Number(b.count), 1, 1, 1, 1, 1, 1)
+			tip:AddDoubleLine("In your reagent bank", RAH.Number(b.bank), 0.31, 0.76, 0.97, 0.31, 0.76, 0.97)
+		end
+	end,
 	isSelected = function (b) return state.item and state.item.identity == b.identity end,
-	onClick = function (b) Sell.Select(b.bag, b.slot) end,
+	onClick = function (b) Sell.SelectGroup(b) end,
 	empty = "Nothing in your bags can be auctioned.",
 })
 bagItems:SetPoint("TOPLEFT", bagPane, "TOPLEFT", 4, -4)
@@ -251,6 +269,26 @@ local function scanBags()
 			end
 		end
 	end
+
+	-- Reagent bank contents join their bag stacks, or get a row of their own.
+	for entry, amount in pairs(state.bank) do
+		local identity = "c" .. entry
+		local g = groups[identity]
+		if g then
+			g.bank = amount
+		else
+			local info = RAH.Item(entry)
+			if info and info.maxStack > 1 then
+				g = {
+					identity = identity, bag = BAG_BY_ENTRY, slot = entry, entry = entry, link = info.link, name = info.name,
+					texture = info.texture, quality = info.quality, commodity = true, count = 0, bank = amount,
+					sellPrice = info.sellPrice, order = #list + 1,
+				}
+				groups[identity] = g
+				table.insert(list, g)
+			end
+		end
+	end
 	return list, groups
 end
 
@@ -295,8 +333,14 @@ local function requestDeposit()
 			state.available = tonumber(result[2]) or 0
 			state.stack = tonumber(result[3]) or 1
 			depositValue:SetMoney(state.deposit)
-			inBags:SetText(item.commodity and ("In bags: " .. RAH.Number(state.available))
-				or (state.available > 1 and ("Identical in bags: " .. state.available) or ""))
+			local bank = tonumber(result[4]) or 0
+			if item.commodity and bank > 0 then
+				inBags:SetText("Bags: " .. RAH.Number(state.available - bank) .. "   |cff4fc3f7Reagent bank: " .. RAH.Number(bank) .. "|r")
+			elseif item.commodity then
+				inBags:SetText("In bags: " .. RAH.Number(state.available))
+			else
+				inBags:SetText(state.available > 1 and ("Identical in bags: " .. state.available) or "")
+			end
 			if state.available == 0 then
 				RAH.Status("That item can't be auctioned.", true)
 			end
@@ -379,6 +423,22 @@ local function showForm(item)
 	for _, cb in ipairs(durationChecks) do cb:SetChecked(cb.hours == hours()) end
 end
 
+-- Pick a row of the item list (which may be reagent-bank only).
+function Sell.SelectGroup(item)
+	state.item = item
+	state.priceTouched = false
+	state.available = item.count
+	state.deposit = 0
+	suggestPrice(0)
+	bidInput:SetCopper(0)
+	qtyBox:SetText(tostring(item.commodity and (item.count + (item.bank or 0)) or 1))
+	showForm(item)
+	bagItems:Refresh()
+	loadListings()
+	requestDeposit()
+end
+
+-- Pick the item in a bag slot.
 function Sell.Select(bag, slotIndex)
 	local link = GetContainerItemLink(bag, slotIndex)
 	if not link then return end
@@ -393,17 +453,7 @@ function Sell.Select(bag, slotIndex)
 	end
 	-- Point at the stack that was actually picked.
 	item.bag, item.slot = bag, slotIndex
-	state.item = item
-	state.priceTouched = false
-	state.available = item.count
-	state.deposit = 0
-	suggestPrice(0)
-	bidInput:SetCopper(0)
-	qtyBox:SetText(tostring(item.commodity and item.count or 1))
-	showForm(item)
-	bagItems:Refresh()
-	loadListings()
-	requestDeposit()
+	Sell.SelectGroup(item)
 end
 
 function Sell.Clear()
@@ -521,7 +571,11 @@ end)
 slot:SetScript("OnEnter", function (self)
 	if state.item then
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetBagItem(state.item.bag, state.item.slot)
+		if state.item.bag == BAG_BY_ENTRY then
+			GameTooltip:SetHyperlink(state.item.link)
+		else
+			GameTooltip:SetBagItem(state.item.bag, state.item.slot)
+		end
 		GameTooltip:AddLine("Right-click to clear", 0.5, 0.8, 1)
 		GameTooltip:Show()
 	end
@@ -564,20 +618,46 @@ local function refreshBags()
 	bagItems:SetItems(list, true)
 end
 
+local function loadBank()
+	if not RAH.reagentBank then
+		state.bank = {}
+		return
+	end
+	local token = {}
+	state.bankReq = token
+	RAH.Request("RB", nil, function (result)
+		if state.bankReq ~= token or not result then return end
+		local bank = {}
+		for _, r in ipairs(result.rows) do bank[r[1]] = r[2] end
+		state.bank = bank
+		if panel:IsShown() then
+			refreshBags()
+			if state.item then relocate() end
+		end
+	end)
+end
+
 RAH.On("BAGS", function ()
 	if panel:IsShown() then refreshBags() end
 end)
+RAH.On("POSTED", function () if panel:IsShown() then loadBank() end end)
 
 RAH.On("READY", function ()
-	if panel:IsShown() then updatePostButton() end
+	if panel:IsShown() then updatePostButton(); loadBank() end
 end)
 
 RAH.On("MONEY", function () if panel:IsShown() then updatePostButton() end end)
 
-RAH.On("CLOSED", function () Sell.Clear() end)
+RAH.On("CLOSED", function () Sell.Clear(); state.bank = {} end)
 
 RAH.On("ITEM_INFO", function ()
-	if panel:IsShown() then RAH.Debounce("sell-items", 0.2, function () auctionList:Refresh() end) end
+	if panel:IsShown() then
+		RAH.Debounce("sell-items", 0.2, function ()
+			auctionList:Refresh()
+			-- Reagent-bank-only rows appear once their item info arrives.
+			if next(state.bank) then refreshBags() end
+		end)
+	end
 end)
 
 panel:SetScript("OnShow", function ()
@@ -585,5 +665,6 @@ panel:SetScript("OnShow", function ()
 		if _G[key] then NOT_POSTABLE[_G[key]] = true end
 	end
 	refreshBags()
+	loadBank()
 	if state.item then relocate(); loadListings() else showForm(nil) end
 end)

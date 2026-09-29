@@ -42,3 +42,13 @@ RetailAH.MaxDetailRows = 300
 #
 
 RetailAH.SearchCooldownMs = 250
+
+#
+#    RetailAH.ReagentBank
+#        Description: With mod-reagent-bank-account installed, let players post commodities
+#                     straight from their reagent bank (after what's in their bags), and list the
+#                     bank's contents on the Sell tab. Does nothing without that module.
+#        Default:     1
+#
+
+RetailAH.ReagentBank = 1

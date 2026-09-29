@@ -1,5 +1,6 @@
 -- The RetailAH window: chrome, tabs along the bottom, the player's money, a status line and the
--- Classic button. Each tab file adds its panel with RAH.AddTab.
+-- Classic button. Each tab file adds its panel with RAH.AddTab. Drag it by the title bar; it
+-- remembers where it was put (/rah reset puts it back).
 
 local RAH = RetailAH
 
@@ -7,11 +8,28 @@ local WIDTH, HEIGHT = 832, 540
 
 local frame = CreateFrame("Frame", "RetailAHFrame", UIParent)
 frame:SetSize(WIDTH, HEIGHT)
-frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -104)
 frame:EnableMouse(true)
 frame:SetToplevel(true)
+frame:SetMovable(true)
+frame:SetClampedToScreen(true)
 frame:Hide()
-UIPanelWindows["RetailAHFrame"] = { area = "doublewide", pushable = 0 }
+-- Escape closes it, like any panel.
+table.insert(UISpecialFrames, "RetailAHFrame")
+
+local function placeFrame()
+	frame:ClearAllPoints()
+	local p = RetailAHDB and RetailAHDB.position
+	if p then
+		frame:SetPoint(p[1], UIParent, p[2], p[3], p[4])
+	else
+		frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -104)
+	end
+end
+
+function RAH.ResetPosition()
+	RetailAHDB.position = nil
+	placeFrame()
+end
 
 local dragon = RAH.DressWindow(frame)
 
@@ -19,13 +37,19 @@ local title = frame.chrome:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 title:SetPoint("TOP", frame, "TOP", 0, -5)
 title:SetText(AUCTION_HOUSE or "Auction House")
 
--- The auctioneer's face in the corner ring, as the stock window has it.
-local portrait
-if dragon then
-	portrait = frame:CreateTexture(nil, "ARTWORK")
-	portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", -2, 4)
-	portrait:SetSize(56, 56)
-end
+-- The title bar is the drag handle.
+local dragBar = CreateFrame("Frame", nil, frame)
+dragBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+dragBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -28, 0)
+dragBar:SetHeight(24)
+dragBar:EnableMouse(true)
+dragBar:RegisterForDrag("LeftButton")
+dragBar:SetScript("OnDragStart", function () frame:StartMoving() end)
+dragBar:SetScript("OnDragStop", function ()
+	frame:StopMovingOrSizing()
+	local point, _, relativePoint, x, y = frame:GetPoint(1)
+	RetailAHDB.position = { point, relativePoint, x, y }
+end)
 
 local close = CreateFrame("Button", "RetailAHFrameCloseButton", frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
@@ -113,7 +137,7 @@ end
 
 frame:SetScript("OnShow", function ()
 	PlaySound("AuctionWindowOpen")
-	if portrait then SetPortraitTexture(portrait, "npc") end
+	placeFrame()
 	money:SetMoney(GetMoney())
 	status:SetText("")
 	RAH.SelectTab(RAH.currentTab or 1)

@@ -189,9 +189,12 @@ categoryScroll:SetPoint("BOTTOMRIGHT", categoryPane, "BOTTOMRIGHT", -24, 4)
 local categoryButtons = {}
 local refreshCategories
 
+-- Clicking the selected category again clears it (and folds it), so a name search covers
+-- every category again.
 local function selectNode(n, depth)
-	if state.node == n and n.children then
-		expanded[n] = not expanded[n]
+	if state.node == n then
+		state.node = nil
+		expanded[n] = nil
 	else
 		if depth == 0 then
 			for _, other in ipairs(RAH.CATEGORIES) do if other ~= n then expanded[other] = nil end end
@@ -238,6 +241,14 @@ for i = 1, CATEGORY_ROWS do
 	btn.text:SetJustifyH("LEFT")
 	btn.text:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
 	btn:SetScript("OnClick", function (self) if self.entry then selectNode(self.entry.node, self.entry.depth) end end)
+	btn:SetScript("OnEnter", function (self)
+		if self.entry and state.node == self.entry.node then
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine("Click again to search all categories.", 1, 1, 1)
+			GameTooltip:Show()
+		end
+	end)
+	btn:SetScript("OnLeave", function () GameTooltip:Hide() end)
 	categoryButtons[i] = btn
 end
 
@@ -361,7 +372,11 @@ local function showResults(rows, truncated, emptyText)
 	elseif state.lastQuery == "favorites" then
 		resultCount:SetText(#rows .. " favorites")
 	else
-		resultCount:SetText(#rows == 1 and "1 item" or (#rows .. " items"))
+		local text = #rows == 1 and "1 item" or (#rows .. " items")
+		if state.node then
+			text = text .. " in |cffffd200" .. state.node.name .. "|r"
+		end
+		resultCount:SetText(text)
 	end
 end
 

@@ -30,6 +30,9 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   sellable items.
 - **Commodities are posted as a quantity at a unit price.** The module gathers them from all your
   bags and lists them as full stacks, so you never split stacks by hand.
+- With [mod-reagent-bank-account](https://github.com/buildthehomelab/mod-reagent-bank-account),
+  your **reagent bank** counts too: its contents show in the item list (a blue `+` on the count),
+  and a post takes from your bags first and then the bank, like retail's reagent bank.
 - Other items get a buyout and an optional starting bid, and you can post several identical
   ones at once.
 - The price starts at the current lowest listing (click any listing to match it), the deposit
@@ -40,7 +43,8 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 - Auctions you hold the top bid on; raise the bid or buy them out.
 
 The window uses [DragonUI](https://github.com/NeticSoul/DragonUI)'s retail art when DragonUI is
-loaded, and a dark retail-style look of its own otherwise. A **Classic** button (and
+loaded, and a dark retail-style look of its own otherwise. Drag it by the title bar; it stays
+where you put it. A **Classic** button (and
 `/rah classic`) opens the old window, and with it Auctionator, for players who want it.
 
 ## How it works
@@ -59,7 +63,12 @@ On the server:
 - **Buying a whole auction, bidding, cancelling and posting** are handed to the core's own
   auction handlers, as if the stock window had sent them. Deposits, the house cut, mails,
   achievements, GM logging and every other module's hooks behave exactly as before.
-- **Buying part of a stack** is the one new trade. The seller's auction is replaced by one for the
+- **Posting from the reagent bank** is done by the module: the reagent bank stores amounts, not
+  items, so there is nothing for the core's sell handler to take. The module finds the player's
+  bank row the way mod-reagent-bank-account does (account-wide or per character, shared banks
+  included), creates the auction and takes the units off the bank row in one transaction, and
+  tells ReagentBankUI to refresh.
+- **Buying part of a stack** is the other new trade. The seller's auction is replaced by one for the
   rest of the stack (same unit price, same expiry, the rest of the deposit), and the bought part
   is settled like a buyout: the seller gets the sale mails and the money minus the cut and plus
   that share of the deposit, and the buyer gets the items by mail. All of it, the split included,
@@ -100,10 +109,13 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 | `RetailAH.MaxResults` | 500 | Most item groups one search returns (cut off alphabetically). |
 | `RetailAH.MaxDetailRows` | 300 | Most price tiers or listings shown for one item. |
 | `RetailAH.SearchCooldownMs` | 250 | Shortest time between two searches from one player. |
+| `RetailAH.ReagentBank` | 1 | Post commodities from mod-reagent-bank-account's reagent bank too. |
 
 ## Commands
 
 - `/rah classic` makes the old window open at the auctioneer; `/rah retail` switches back.
+- `/rah reset` moves the window back to its default spot.
+- In the Buy tab, click the selected category again to clear it and search every category.
 
 ## Not included
 

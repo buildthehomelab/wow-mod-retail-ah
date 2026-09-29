@@ -46,7 +46,8 @@ local FALLBACK_BACKDROP = {
 	insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
 
--- The outer window: DragonUI's metal portrait frame on rock, or a dark bordered box.
+-- The outer window: DragonUI's metal frame (the one without a portrait ring) on rock, or a dark
+-- bordered box.
 function RAH.DressWindow(frame)
 	local D = RAH.Dragon()
 	if D then
@@ -69,7 +70,8 @@ function RAH.DressWindow(frame)
 		chrome:SetAllPoints(frame)
 		chrome:SetFrameLevel(frame:GetFrameLevel() + 30)
 		chrome:EnableMouse(false)
-		NineSliceUtils.ApplyLayout(chrome, NineSliceUtils.GetLayout("PortraitFrameTemplate"))
+		NineSliceUtils.ApplyLayout(chrome, NineSliceUtils.GetLayout("NoPortraitFrameTemplate")
+			or NineSliceUtils.GetLayout("PortraitFrameTemplate"))
 		frame.chrome = chrome
 		return true
 	end

@@ -18,7 +18,9 @@
 #include "RetailAH.h"
 #include "AuctionHouseMgr.h"
 #include "Bag.h"
+#include "Creature.h"
 #include "DatabaseEnv.h"
+#include "GameTime.h"
 #include "Item.h"
 #include "Log.h"
 #include "ObjectMgr.h"
@@ -263,6 +265,9 @@ namespace RetailAH
             bool exact;
             std::array<uint32, MAX_ENCHANTMENT_SLOT> enchants {};
 
+            // Any stack of this entry (commodities).
+            explicit ItemKind(uint32 entry) : entry(entry), randomPropertyId(0), suffixFactor(0), exact(false) { }
+
             ItemKind(Item const* item, bool exact) : entry(item->GetEntry()), randomPropertyId(item->GetItemRandomPropertyId()),
                 suffixFactor(item->GetItemSuffixFactor()), exact(exact)
             {
@@ -354,6 +359,157 @@ namespace RetailAH
         {
             Send(ctx.player, "POR:" + ctx.req + ":" + std::to_string(created) + ":" + std::to_string(requested)
                 + ":" + std::string(status));
+        }
+
+        // AuctionHouseMgr::GetAuctionDeposit's formula; that one wants an Item, and units posted
+        // from the reagent bank don't have one until the auction exists.
+        uint32 Deposit(AuctionHouseEntry const* house, uint32 seconds, ItemTemplate const* proto, uint32 count)
+        {
+            float const rate = sWorld->getRate(RATE_AUCTION_DEPOSIT);
+            uint32 const minimum = uint32(100 * rate);  // AH_MINIMUM_DEPOSIT
+            uint32 const sellPrice = proto->SellPrice;
+            if (sellPrice <= 0)
+                return minimum;
+
+            float multiplier = CalculatePct(float(house->depositPercent), 3);
+            uint32 timeHr = (((seconds / 60) / 60) / 12);
+            uint32 deposit = uint32(((multiplier * sellPrice * count / 3) * timeHr * 3) * rate);
+            return deposit < minimum ? minimum : deposit;
+        }
+
+        // Where a commodity post can draw from.
+        struct CommoditySource
+        {
+            ItemTemplate const* proto = nullptr;
+            uint32 bagUnits = 0;
+            uint32 bankUnits = 0;
+        };
+
+        bool ResolveCommodity(Context const& ctx, uint32 bag, uint32 slot, CommoditySource& out)
+        {
+            if (bag == BAG_BY_ENTRY)
+                out.proto = sObjectMgr->GetItemTemplate(slot);
+            else
+            {
+                Item* item = ItemAt(ctx.player, bag, slot);
+                if (!Postable(item))
+                    return false;
+                out.proto = item->GetTemplate();
+            }
+
+            if (!IsCommodity(out.proto))
+                return false;
+            out.bagUnits = CountUnits(BagItems(ctx.player, ItemKind(out.proto->ItemId)));
+            out.bankUnits = ReagentBank::Stored(ctx.player, out.proto->ItemId);
+            return true;
+        }
+
+        struct Chunk
+        {
+            uint32 count;
+            bool fromBank;
+        };
+
+        // Full stacks, from the bags first and then the reagent bank. One auction holds units from
+        // one place only, so the last bag auction may be a short stack.
+        std::vector<Chunk> PlanChunks(uint32 quantity, CommoditySource const& source, uint32 stack)
+        {
+            std::vector<Chunk> chunks;
+            uint32 bags = source.bagUnits, bank = source.bankUnits;
+            while (quantity)
+            {
+                bool fromBank = bags == 0;
+                uint32 from = fromBank ? bank : bags;
+                if (!from)
+                    break;
+                uint32 count = std::min({ quantity, stack, from });
+                chunks.push_back({ count, fromBank });
+                (fromBank ? bank : bags) -= count;
+                quantity -= count;
+            }
+            return chunks;
+        }
+
+        // Creates one auction from reagent bank units, doing what the sell handler does for items
+        // from the bags: deposit, auction and item rows, achievement, logs. The bank row is
+        // debited in the same transaction.
+        uint32 PostFromBank(Context const& ctx, ItemTemplate const* proto, uint32 count, uint32 buyout, uint32 hours)
+        {
+            Player* player = ctx.player;
+            WorldSession* session = player->GetSession();
+            if (sWorld->getBoolConfig(CONFIG_TRIAL_RESTRICTION_AUCTION) && session->IsTrialAccount())
+                return 0;
+            if (ReagentBank::Stored(player, proto->ItemId) < count)
+                return 0;
+
+            uint32 const seconds = hours * HOUR;
+            uint32 const deposit = Deposit(ctx.houseEntry, seconds, proto, count);
+            if (!player->HasEnoughMoney(deposit))
+                return 0;
+
+            // The house the auction belongs to, worked out as the sell handler does.
+            AuctionHouseId houseId = AuctionHouseId::Neutral;
+            if (!sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_AUCTION))
+            {
+                CreatureData const* data = sObjectMgr->GetCreatureData(ctx.auctioneer->GetSpawnId());
+                CreatureTemplate const* info = data ? sObjectMgr->GetCreatureTemplate(data->id) : nullptr;
+                AuctionHouseEntry const* entry = info ? AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate(info->faction) : nullptr;
+                if (!entry)
+                    return 0;
+                houseId = AuctionHouseId(entry->houseId);
+            }
+
+            Item* item = Item::CreateItem(proto->ItemId, count, player);
+            if (!item)
+                return 0;
+            if (item->GetCount() != count)
+            {
+                delete item;
+                return 0;
+            }
+
+            AuctionEntry* auction = new AuctionEntry;
+            auction->Id = sObjectMgr->GenerateAuctionID();
+            auction->houseId = houseId;
+            auction->item_guid = item->GetGUID();
+            auction->item_template = item->GetEntry();
+            auction->itemCount = count;
+            auction->owner = player->GetGUID();
+            auction->startbid = buyout;
+            auction->bidder = ObjectGuid::Empty;
+            auction->bid = 0;
+            auction->buyout = buyout;
+            auction->expire_time = GameTime::GetGameTime().count() + uint32(seconds * sWorld->getRate(RATE_AUCTION_TIME));
+            auction->deposit = deposit;
+            auction->auctionHouseEntry = ctx.houseEntry;
+
+            player->ModifyMoney(-int32(deposit));
+
+            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+            item->SaveToDB(trans);
+            auction->SaveToDB(trans);
+            ReagentBank::Take(player, proto->ItemId, count, trans);
+            player->SaveInventoryAndGoldToDB(trans);
+            CharacterDatabase.CommitTransaction(trans);
+
+            sAuctionMgr->AddAItem(item);
+            ctx.house->AddAuction(auction);
+
+            session->SendAuctionCommandResult(auction->Id, AUCTION_SELL_ITEM, ERR_AUCTION_OK);
+            player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_CREATE_AUCTION, 1);
+
+            if (session->HasPermission(rbac::RBAC_PERM_LOG_GM_TRADE))
+            {
+                LOG_GM(session->GetAccountId(), "GM {} (Account: {}) created auction: {} (Item: {} Count: {}) Bid: {} Buyout: {} (from the reagent bank)",
+                    player->GetName(), session->GetAccountId(), auction->Id, proto->Name1, count, buyout, buyout);
+            }
+
+            LOG_INFO("entities.player.auctionhouse", "AuctionHouse: Account: {} (IP: {}), Player [{}] (GUID: {}) created auction #{} from the reagent bank: "
+                "Item '{}' (Entry: {}) x{}, StartBid: {} copper, Buyout: {} copper, Deposit: {} copper",
+                session->GetAccountId(), session->GetRemoteAddress(), player->GetName(), player->GetGUID().GetCounter(), auction->Id,
+                proto->Name1, proto->ItemId, count, buyout, buyout, deposit);
+
+            return auction->Id;
         }
     }
 
@@ -498,8 +654,10 @@ namespace RetailAH
     }
 
     // D:<req>:<bag>:<slot>:<quantity>:<hours>
-    // Commodities go up in full stacks plus one remainder, other items one per auction; the
-    // deposit is the sum the sell handler will charge for exactly that.
+    // Answer: DR:<req>:<deposit>:<available>:<stack size>:<of which in the reagent bank>
+    // Commodities go up in full stacks (bags first, then the reagent bank), other items one per
+    // auction; the deposit is what posting exactly that will cost. bag BAG_BY_ENTRY: slot is an
+    // item entry, for a commodity that may only be in the reagent bank.
     void HandleDeposit(Context& ctx, std::vector<std::string_view> const& args)
     {
         uint32 bag = 0, slot = 0, quantity = 0, hours = 0;
@@ -510,43 +668,41 @@ namespace RetailAH
             return;
         }
 
-        Item* item = ItemAt(ctx.player, bag, slot);
-        if (!Postable(item))
+        uint32 const seconds = hours * HOUR;
+        uint64 deposit = 0;
+        CommoditySource source;
+        if (ResolveCommodity(ctx, bag, slot, source))
         {
-            Send(ctx.player, "DR:" + ctx.req + ":0:0:0");
+            uint32 stack = AuctionStack(source.proto);
+            quantity = std::min(quantity, source.bagUnits + source.bankUnits);
+            for (Chunk const& chunk : PlanChunks(quantity, source, stack))
+                deposit += Deposit(ctx.houseEntry, seconds, source.proto, chunk.count);
+
+            Send(ctx.player, "DR:" + ctx.req + ":" + std::to_string(deposit) + ":" + std::to_string(source.bagUnits + source.bankUnits)
+                + ":" + std::to_string(stack) + ":" + std::to_string(source.bankUnits));
             return;
         }
 
-        bool commodity = IsCommodity(item->GetTemplate());
-        std::vector<Item*> items = BagItems(ctx.player, ItemKind(item, !commodity));
-        uint32 stack = AuctionStack(item->GetTemplate());
-        uint32 available = commodity ? CountUnits(items) : uint32(items.size());
+        Item* item = bag == BAG_BY_ENTRY ? nullptr : ItemAt(ctx.player, bag, slot);
+        if (!Postable(item) || IsCommodity(item->GetTemplate()))
+        {
+            Send(ctx.player, "DR:" + ctx.req + ":0:0:0:0");
+            return;
+        }
+
+        std::vector<Item*> items = BagItems(ctx.player, ItemKind(item, true));
+        uint32 available = uint32(items.size());
         quantity = std::min(quantity, available);
+        for (uint32 i = 0; i < quantity; ++i)
+            deposit += AuctionHouseMgr::GetAuctionDeposit(ctx.houseEntry, seconds, items[i], items[i]->GetCount());
 
-        uint64 deposit = 0;
-        uint32 seconds = hours * HOUR;
-        if (commodity)
-        {
-            for (uint32 left = quantity; left; )
-            {
-                uint32 count = std::min(left, stack);
-                deposit += AuctionHouseMgr::GetAuctionDeposit(ctx.houseEntry, seconds, item, count);
-                left -= count;
-            }
-        }
-        else
-        {
-            for (uint32 i = 0; i < quantity; ++i)
-                deposit += AuctionHouseMgr::GetAuctionDeposit(ctx.houseEntry, seconds, items[i], items[i]->GetCount());
-        }
-
-        Send(ctx.player, "DR:" + ctx.req + ":" + std::to_string(deposit) + ":" + std::to_string(available) + ":"
-            + std::to_string(stack));
+        Send(ctx.player, "DR:" + ctx.req + ":" + std::to_string(deposit) + ":" + std::to_string(available) + ":1:0");
     }
 
     // PC:<req>:<bag>:<slot>:<quantity>:<unit price>:<hours>
-    // Posts `quantity` units of the item at bag/slot, gathered from every stack in the bags, as
-    // full stacks plus a remainder. Buyout only: the starting bid equals the buyout.
+    // Posts `quantity` units of a commodity, gathered from every stack in the bags and then the
+    // reagent bank, as full stacks. Buyout only: the starting bid equals the buyout. bag may be
+    // BAG_BY_ENTRY with the item entry in slot.
     void HandlePostCommodity(Context& ctx, std::vector<std::string_view> const& args)
     {
         uint32 bag = 0, slot = 0, quantity = 0, unitPrice = 0, hours = 0;
@@ -557,25 +713,43 @@ namespace RetailAH
             return;
         }
 
-        Item* first = ItemAt(ctx.player, bag, slot);
-        if (!Postable(first) || !IsCommodity(first->GetTemplate()))
+        CommoditySource source;
+        if (!ResolveCommodity(ctx, bag, slot, source))
             return SendPostResult(ctx, 0, 0, "item");
 
-        // `first` itself may be merged into an auction and deleted, so remember what it was.
-        ItemKind const kind(first, false);
-        uint32 const stack = AuctionStack(first->GetTemplate());
+        ItemTemplate const* proto = source.proto;
+        ItemKind const kind(proto->ItemId);
+        uint32 const stack = AuctionStack(proto);
         if (uint64(unitPrice) * std::min(quantity, stack) > MAX_MONEY_AMOUNT)
             return SendPostResult(ctx, 0, 0, "price");
-
-        if (CountUnits(BagItems(ctx.player, kind)) < quantity)
+        if (source.bagUnits + source.bankUnits < quantity)
             return SendPostResult(ctx, 0, 0, "count");
 
-        uint32 const requested = (quantity + stack - 1) / stack;
+        std::vector<Chunk> chunks = PlanChunks(quantity, source, stack);
         uint32 created = 0;
+        bool touchedBank = false;
         std::string status = "ok";
-        for (uint32 left = quantity; left; )
+        for (Chunk const& chunk : chunks)
         {
-            uint32 count = std::min(left, stack);
+            uint32 const count = chunk.count;
+            uint32 const buyout = unitPrice * count;
+            if (!ctx.player->HasEnoughMoney(Deposit(ctx.houseEntry, hours * HOUR, proto, count)))
+            {
+                status = "money";
+                break;
+            }
+
+            if (chunk.fromBank)
+            {
+                if (!PostFromBank(ctx, proto, count, buyout, hours))
+                {
+                    status = "fail";
+                    break;
+                }
+                touchedBank = true;
+                ++created;
+                continue;
+            }
 
             // Rescan each time: the handler deletes or shrinks the stacks it takes from.
             std::vector<Item*> items = BagItems(ctx.player, kind);
@@ -599,25 +773,17 @@ namespace RetailAH
                 break;
             }
 
-            uint32 buyout = unitPrice * count;
-            uint32 deposit = AuctionHouseMgr::GetAuctionDeposit(ctx.houseEntry, hours * HOUR, picks.front().first, count);
-            if (!ctx.player->HasEnoughMoney(deposit))
-            {
-                status = "money";
-                break;
-            }
-
             if (!Sell(ctx, picks, buyout, buyout, hours))
             {
                 status = "fail";
                 break;
             }
-
             ++created;
-            left -= count;
         }
 
-        SendPostResult(ctx, created, requested, status);
+        if (touchedBank)
+            ReagentBank::NotifyChanged(ctx.player);
+        SendPostResult(ctx, created, uint32(chunks.size()), status);
     }
 
     // PI:<req>:<bag>:<slot>:<quantity>:<bid>:<buyout>:<hours>
