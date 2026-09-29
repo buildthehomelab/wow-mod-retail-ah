@@ -171,12 +171,40 @@ function RAH.ItemString(entry, randomProperty, suffixFactor)
 	return string.format("item:%d:0:0:0:0:0:%d:%d", entry, randomProperty, tonumber(suffixFactor) or 0)
 end
 
+-- The icon comes from the client's own Item.dbc, so it shows before the server has answered.
+function RAH.ItemIcon(entry)
+	local info = RAH.Item(entry)
+	if info then return info.texture end
+	return GetItemIcon and GetItemIcon(tonumber(entry) or entry) or nil
+end
+
+-- Asks the server about every item in a result at once, a few dozen per frame so a big
+-- result doesn't stall one frame, instead of only as rows scroll into view.
+local prefetch = {}
+local prefetchFrame = CreateFrame("Frame")
+prefetchFrame:Hide()
+prefetchFrame:SetScript("OnUpdate", function (self)
+	for _ = 1, 40 do
+		local item = table.remove(prefetch)
+		if not item then self:Hide() return end
+		RAH.Item(item)
+	end
+end)
+
+function RAH.Prefetch(items)
+	prefetch = {}
+	for i = #items, 1, -1 do table.insert(prefetch, items[i]) end
+	prefetchFrame:Show()
+end
+
+-- No event tells a 3.3.5a addon that item info arrived, so poll, but often: the answer
+-- usually comes back within a frame or two.
 local pollFrame = CreateFrame("Frame")
 local pollElapsed = 0
 pollFrame:SetScript("OnUpdate", function (self, elapsed)
 	if waitingCount == 0 then return end
 	pollElapsed = pollElapsed + elapsed
-	if pollElapsed < 0.25 then return end
+	if pollElapsed < 0.03 then return end
 	pollElapsed = 0
 
 	local now, arrived = GetTime(), false
@@ -224,11 +252,14 @@ end
 local nextReq = 0
 local pending = {}
 
--- Requests that walk the whole auction house; the server takes one every 250 ms per player.
+-- Requests that walk the whole auction house. They go out at once, but only HEAVY_IN_FLIGHT
+-- wait for an answer at a time; the rest queue, and a new search drops the queued ones.
 local HEAVY = { S = true, F = true }
-local HEAVY_GAP = 0.3
+local HEAVY_IN_FLIGHT = 4
+local HEAVY_TIMEOUT = 5
 local heavyQueue = {}
-local lastHeavy = 0
+local inFlight = {}  -- req -> time sent
+local inFlightCount = 0
 
 local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true }
 
@@ -236,24 +267,59 @@ local function send(msg)
 	SendAddonMessage(RAH.PREFIX, msg, "WHISPER", UnitName("player"))
 end
 
+local function sendHeavy(p)
+	inFlight[p.req] = GetTime()
+	inFlightCount = inFlightCount + 1
+	send(p.msg)
+end
+
+local function drainHeavy()
+	while #heavyQueue > 0 and inFlightCount < HEAVY_IN_FLIGHT do
+		sendHeavy(table.remove(heavyQueue, 1))
+	end
+end
+
+local function landHeavy(req)
+	if inFlight[req] then
+		inFlight[req] = nil
+		inFlightCount = inFlightCount - 1
+		drainHeavy()
+	end
+end
+
+-- A lost answer mustn't hold its slot forever.
 local heavyFrame = CreateFrame("Frame")
-heavyFrame:Hide()
 heavyFrame:SetScript("OnUpdate", function (self)
-	if #heavyQueue == 0 then self:Hide() return end
-	if GetTime() - lastHeavy < HEAVY_GAP then return end
-	lastHeavy = GetTime()
-	send(table.remove(heavyQueue, 1))
+	if inFlightCount == 0 then return end
+	local now, expired = GetTime(), {}
+	for req, sent in pairs(inFlight) do
+		if now - sent > HEAVY_TIMEOUT then table.insert(expired, req) end
+	end
+	-- Landing sends queued requests, which adds to inFlight; not while iterating it.
+	for _, req in ipairs(expired) do landHeavy(req) end
 end)
 
 -- handler(result, err): result is { rows = {...}, meta = {...} } for list answers and the
 -- array of fields for single ones; err is set when the server refused ("far", "busy", "bad").
 local function dispatch(p)
 	if p.heavy then
-		table.insert(heavyQueue, p.msg)
-		heavyFrame:Show()
+		table.insert(heavyQueue, p)
+		drainHeavy()
 	else
 		send(p.msg)
 	end
+end
+
+-- Forgets searches that haven't gone out yet; a newer one replaces them.
+function RAH.CancelQueuedSearches()
+	for _, p in ipairs(heavyQueue) do pending[p.req] = nil end
+	heavyQueue = {}
+end
+
+local function resetHeavy()
+	RAH.CancelQueuedSearches()
+	inFlight = {}
+	inFlightCount = 0
 end
 
 function RAH.Request(cmd, fields, handler)
@@ -265,7 +331,7 @@ function RAH.Request(cmd, fields, handler)
 		msg = msg .. ":" .. table.concat(fields, ":")
 	end
 
-	local p = { handler = handler, rows = {}, msg = msg, heavy = HEAVY[cmd], tries = 0 }
+	local p = { req = req, handler = handler, rows = {}, msg = msg, heavy = HEAVY[cmd], tries = 0 }
 	pending[req] = p
 	dispatch(p)
 	return req
@@ -287,6 +353,7 @@ local function parseRows(text, into)
 end
 
 local function finish(req, result, err)
+	landHeavy(req)
 	local p = pending[req]
 	if not p then return end
 	pending[req] = nil
@@ -307,9 +374,10 @@ local function onAddonMessage(message)
 	elseif code == "ERR" then
 		-- The server rations requests per character; ask again shortly, same request id.
 		local p = pending[req]
-		if rest == "busy" and p and p.tries < 4 then
+		if rest == "busy" and p and p.tries < 5 then
 			p.tries = p.tries + 1
-			RAH.After(0.4 * p.tries, function () if pending[req] == p then dispatch(p) end end)
+			landHeavy(req)
+			RAH.After(0.15 * p.tries, function () if pending[req] == p then dispatch(p) end end)
 			return
 		end
 		finish(req, nil, rest)
@@ -431,6 +499,7 @@ local function onAuctionHouseClosed()
 	helloTimer = helloTimer + 1
 	RAH.active = false
 	RAH.serverReady = false
+	resetHeavy()
 	if RetailAHFrame and RetailAHFrame:IsShown() then RetailAHFrame:Hide() end
 	StaticPopup_Hide("RETAILAH_CONFIRM")
 	RAH.Fire("CLOSED")

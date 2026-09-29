@@ -353,8 +353,7 @@ local function itemName(g)
 end
 
 local function itemIcon(entry)
-	local info = RAH.Item(entry)
-	return info and info.texture
+	return RAH.ItemIcon(entry)
 end
 
 local function sortName(entry)
@@ -416,13 +415,20 @@ local results = RAH.CreateList(resultsPane, {
 results:SetPoint("TOPLEFT", resultsPane, "TOPLEFT", 4, -4)
 results:SetPoint("BOTTOMRIGHT", resultsPane, "BOTTOMRIGHT", -4, 4)
 
-local function showResults(rows, truncated, emptyText)
+-- Answers from this visit, by query, so a search seen before shows at once while the fresh
+-- answer is on its way.
+local resultCache = {}
+
+local function showResults(rows, truncated, emptyText, keepScroll)
 	state.results = {}
 	for i, r in ipairs(rows) do
 		table.insert(state.results, { entry = r[1], price = r[2], units = r[3], auctions = r[4], flags = r[5], order = i })
 	end
 	results:SetEmptyText(emptyText or "No items found.")
-	results:SetItems(state.results)
+	results:SetItems(state.results, keepScroll)
+	local entries = {}
+	for i, g in ipairs(state.results) do entries[i] = g.entry end
+	RAH.Prefetch(entries)
 	if truncated then
 		-- Short: it shares the row with the search box. Narrowing the search shows the rest.
 		resultCount:SetText("|cffff8000Showing the first " .. #rows .. " items|r")
@@ -452,21 +458,32 @@ function Buy.Search()
 	local n = state.node
 	local name = searchBox:GetText():gsub("^%s+", ""):gsub("%s+$", "")
 
-	resultCount:SetText("Searching...")
-	-- Answers to a superseded search are dropped.
-	local token = {}
-	state.searchReq = token
-	RAH.Request("S", {
+	local fields = {
 		flags, f.minLevel or 0, f.maxLevel or 0, mask,
 		n and n.class or -1, n and n.subclass or -1, n and n.invtype or -1, name,
-	}, function (result, err)
+	}
+	local key = table.concat(fields, ":")
+	local cached = resultCache[key]
+	if cached then
+		showResults(cached.rows, cached.truncated)
+	else
+		resultCount:SetText("Searching...")
+	end
+
+	-- Answers to a superseded search are dropped.
+	RAH.CancelQueuedSearches()
+	local token = {}
+	state.searchReq = token
+	RAH.Request("S", fields, function (result, err)
 		if state.searchReq ~= token then return end
 		if err then
-			resultCount:SetText("")
+			if not cached then resultCount:SetText("") end
 			RAH.Status(err == "far" and "You're too far from the auctioneer." or "Search failed; try again.", true)
 			return
 		end
-		showResults(result.rows, result.meta[2] == "1")
+		local truncated = result.meta[2] == "1"
+		resultCache[key] = { rows = result.rows, truncated = truncated }
+		showResults(result.rows, truncated, nil, cached ~= nil)
 	end)
 end
 
@@ -483,6 +500,7 @@ function Buy.ShowFavorites()
 	end
 
 	-- The server takes up to 30 per request.
+	RAH.CancelQueuedSearches()
 	local rows, pendingChunks, token = {}, 0, {}
 	state.searchReq = token
 	resultCount:SetText("Loading favorites...")
@@ -1027,7 +1045,7 @@ refresh:SetScript("OnClick", function () loadDetail() end)
 
 RAH.On("ITEM_INFO", function ()
 	if not panel:IsShown() then return end
-	RAH.Debounce("buy-items", 0.2, function ()
+	RAH.Debounce("buy-items", 0.05, function ()
 		results:Refresh()
 		if detail:IsShown() then
 			updateDetailHeader()
@@ -1064,6 +1082,7 @@ RAH.On("READY", function ()
 end)
 
 RAH.On("CLOSED", function ()
+	resultCache = {}
 	filters:Hide()
 	state.searchReq = nil
 	Buy.CloseDetail()
