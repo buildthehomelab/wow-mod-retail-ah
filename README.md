@@ -20,7 +20,10 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 - **Commodities** (anything that stacks): type a quantity and see the total, filled from the
   cheapest listings first. **Buy any quantity**: if you want 7 herbs and the cheapest stack has
   20, you buy 7 and the seller keeps the other 13 listed. Click a price row to ask for
-  everything up to that price.
+  everything up to that price. After a purchase the quantity stays, so **Buy Now** again buys
+  the same amount at the new cheapest prices (Shift-click skips the confirmation).
+  **Bid on Stacks** switches to the separate stacks, to bid on one or buy a whole stack (bots and
+  the old window list stacks with a starting bid).
 - **Everything else**: every listing of the item with bid, buyout, item level (random suffixes
   included) and time left. Bid or buy out. The cheapest listing is picked for you, with its price
   beside **Buy Now**; after each purchase the next cheapest is picked, so you can keep buying

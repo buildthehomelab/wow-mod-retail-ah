@@ -24,6 +24,7 @@ local state = {
 	quote = nil,      -- { quantity, found, total }
 	selectedAuction = nil,
 	tally = { count = 0, spent = 0 },  -- bought since this item was opened
+	stacks = false,    -- a commodity shown as its separate stacks, to bid on one
 	pickNext = false,  -- select the cheapest buyable listing when the list comes back
 }
 
@@ -62,6 +63,8 @@ searchButton:SetPoint("LEFT", filterButton, "RIGHT", 6, 0)
 local resultCount = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 resultCount:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -8)
 resultCount:SetJustifyH("RIGHT")
+resultCount:SetWidth(210)
+resultCount:SetHeight(14)
 
 -----------------------------------------
 -- filter panel
@@ -208,6 +211,7 @@ local categoryScrollName = RAH.UniqueName("CategoryScroll")
 local categoryScroll = CreateFrame("ScrollFrame", categoryScrollName, categoryPane, "FauxScrollFrameTemplate")
 categoryScroll:SetPoint("TOPLEFT", categoryPane, "TOPLEFT", 4, -4)
 categoryScroll:SetPoint("BOTTOMRIGHT", categoryPane, "BOTTOMRIGHT", -24, 4)
+RAH.SkinScrollBar(categoryScroll, categoryScrollName)
 
 local categoryButtons = {}
 local refreshCategories
@@ -244,16 +248,39 @@ for i = 1, CATEGORY_ROWS do
 		end
 		local l = piece("options_listexpand_left", 12 * CATEGORY_ROW / 26)
 		l:SetPoint("LEFT", btn, "LEFT")
+		-- The right cap carries the +; categories without children end on the plain middle.
 		local r = piece("options_listexpand_right", 28 * CATEGORY_ROW / 26)
 		r:SetPoint("RIGHT", btn, "RIGHT")
 		local m = piece("_options_listexpand_middle")
 		m:SetPoint("TOPLEFT", l, "TOPRIGHT")
-		m:SetPoint("BOTTOMRIGHT", r, "BOTTOMLEFT")
 		btn.bar = { l, m, r }
+		btn.SetExpander = function (self, hasChildren, open)
+			m:ClearAllPoints()
+			m:SetPoint("TOPLEFT", l, "TOPRIGHT")
+			if hasChildren then
+				D:SafeSetAtlas(r, open and "options_listexpand_right_expanded" or "options_listexpand_right")
+				r:Show()
+				m:SetPoint("BOTTOMRIGHT", r, "BOTTOMLEFT")
+			else
+				r:Hide()
+				m:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT")
+			end
+		end
 	else
-		local bar = RAH.Solid(btn, "BACKGROUND", 0.2, 0.2, 0.24, 0.9)
-		bar:SetAllPoints(btn)
-		btn.bar = { bar }
+		-- A dark bar with a hairline of gold on top, a gap between rows, and a +/- sign.
+		local bar = RAH.Solid(btn, "BACKGROUND", 0.13, 0.13, 0.15, 0.95)
+		bar:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, -1)
+		bar:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 1)
+		local rule = RAH.Solid(btn, "BORDER", 1, 0.82, 0, 0.15)
+		rule:SetHeight(1)
+		rule:SetPoint("TOPLEFT", bar, "TOPLEFT")
+		rule:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
+		btn.bar = { bar, rule }
+		local sign = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		sign:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
+		btn.SetExpander = function (self, hasChildren, open)
+			sign:SetText(hasChildren and (open and "-" or "+") or "")
+		end
 	end
 	btn.selected = RAH.Solid(btn, "BORDER", 0.25, 0.55, 1, 0.3)
 	btn.selected:SetAllPoints(btn)
@@ -295,6 +322,7 @@ function refreshCategories()
 			end
 			local alpha = depth == 0 and 1 or (depth == 1 and 0.45 or 0)
 			for _, tex in ipairs(btn.bar) do tex:SetAlpha(alpha) end
+			btn:SetExpander(n.children ~= nil, expanded[n])
 			if state.node == n then btn.selected:Show() else btn.selected:Hide() end
 			btn:Show()
 		else
@@ -396,7 +424,8 @@ local function showResults(rows, truncated, emptyText)
 	results:SetEmptyText(emptyText or "No items found.")
 	results:SetItems(state.results)
 	if truncated then
-		resultCount:SetText("|cffff8000First " .. #rows .. " items; narrow the search to see more|r")
+		-- Short: it shares the row with the search box. Narrowing the search shows the rest.
+		resultCount:SetText("|cffff8000Showing the first " .. #rows .. " items|r")
 	elseif state.lastQuery == "favorites" then
 		resultCount:SetText(#rows .. " favorites")
 	else
@@ -521,6 +550,23 @@ detailFav:SetScript("OnLeave", function () GameTooltip:Hide() end)
 local refresh = RAH.CreateButton(detail, REFRESH or "Refresh", 80, 22)
 refresh:SetPoint("TOPRIGHT", detail, "TOPRIGHT", -8, -8)
 
+-- Commodities are bought by quantity, like retail. This switches to the stacks themselves,
+-- for bidding on one (bots and the old window list stacks with a starting bid).
+local stacksToggle = RAH.CreateButton(detail, "Bid on Stacks", 110, 22)
+stacksToggle:SetPoint("RIGHT", refresh, "LEFT", -6, 0)
+stacksToggle:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	if state.stacks then
+		GameTooltip:AddLine("Buy by quantity")
+		GameTooltip:AddLine("Back to buying any amount at the cheapest prices.", 1, 1, 1, true)
+	else
+		GameTooltip:AddLine("Bid on stacks")
+		GameTooltip:AddLine("List every stack on its own, with its bid and buyout, to bid on one or buy a whole stack.", 1, 1, 1, true)
+	end
+	GameTooltip:Show()
+end)
+stacksToggle:SetScript("OnLeave", function () GameTooltip:Hide() end)
+
 -- What has been bought since the item was opened, so buying in a row keeps count.
 local tallyLabel = detail:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 tallyLabel:SetPoint("TOPRIGHT", refresh, "BOTTOMRIGHT", 0, -6)
@@ -547,7 +593,10 @@ local function updateDetailHeader()
 	local info = RAH.Item(g.entry)
 	if info then
 		local _, _, _, hex = RAH.QualityColor(info.quality)
+		detailName:SetWidth(0)
 		detailName:SetText(hex .. info.name .. "|r" .. (isUncollected(g) and NEW_LOOK or ""))
+		-- Long names stop short of the buttons on the right.
+		if detailName:GetStringWidth() > 250 then detailName:SetWidth(250) end
 		detailIcon:SetItem(info.texture, info.quality)
 	else
 		detailName:SetText("|cff808080Loading...|r")
@@ -673,7 +722,7 @@ buyNow:SetScript("OnClick", function ()
 	if not (g and q and q.found >= q.quantity) then return end
 	local info = RAH.Item(g.entry)
 	local text = string.format("Buy %s x %s for %s?", info and info.link or ("item " .. g.entry), RAH.Number(q.quantity), RAH.Money(q.total))
-	RAH.Confirm(text, function ()
+	local function go()
 		RAH.SetEnabled(buyNow, false)
 		RAH.QuietChat(4)
 		RAH.Request("B", { g.entry, q.quantity, q.total }, function (result, err)
@@ -697,8 +746,16 @@ buyNow:SetScript("OnClick", function ()
 			end
 			if state.detail == g then loadDetail() end
 		end)
-	end)
+	end
+	if IsShiftKeyDown() then go() else RAH.Confirm(text, go) end
 end)
+buyNow:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:AddLine("Buy at the cheapest prices")
+	GameTooltip:AddLine("The quantity stays afterwards, so you can buy the same amount again. Shift-click to buy without the confirmation.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+buyNow:SetScript("OnLeave", function () GameTooltip:Hide() end)
 
 -----------------------------------------
 -- item view: individual auctions, bid or buy one
@@ -860,15 +917,34 @@ end)
 -----------------------------------------
 -- opening and loading an item
 
+local function byQuantity(g)
+	return bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0 and not state.stacks
+end
+
+-- Shows the quantity view or the listings view, and the toggle only for commodities.
+local function showDetailMode(g)
+	if byQuantity(g) then
+		commodity:Show(); itemView:Hide()
+	else
+		itemView:Show(); commodity:Hide()
+		Buy.UpdateAuctionButtons()
+	end
+	if bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0 then
+		stacksToggle:SetText(state.stacks and "Buy by Quantity" or "Bid on Stacks")
+		stacksToggle:Show()
+	else
+		stacksToggle:Hide()
+	end
+end
+
 function loadDetail()
 	local g = state.detail
 	if not g then return end
 	updateDetailHeader()
-	local commodityItem = bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0
 	local token = {}
 	state.detailReq = token
 
-	if commodityItem then
+	if byQuantity(g) then
 		RAH.Request("C", { g.entry }, function (result, err)
 			if state.detailReq ~= token or not result then return end
 			local list = {}
@@ -913,18 +989,15 @@ function Buy.OpenDetail(g)
 	state.selectedAuction = nil
 	state.tally = { count = 0, spent = 0 }
 	state.pickNext = true
+	state.stacks = false
 	updateTally()
-	local commodityItem = bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0
-	if commodityItem then
-		commodity:Show(); itemView:Hide()
-		tiers:SetItems({})
-		qtyBox:SetText("1")
-	else
-		commodity:Hide(); itemView:Show()
-		auctions:SetItems({})
-		bidInput:SetCopper(0)
-		Buy.UpdateAuctionButtons()
-	end
+	tiers:SetItems({})
+	qtyBox:SetText("1")
+	auctions:SetItems({})
+	bidInput:SetCopper(0)
+	showDetailMode(g)
+	-- The results sit under the item view; without DragonUI's opaque panes they'd show through.
+	results:Hide()
 	detail:Show()
 	loadDetail()
 end
@@ -933,7 +1006,20 @@ function Buy.CloseDetail()
 	state.detail = nil
 	state.detailReq = nil
 	detail:Hide()
+	results:Show()
 end
+
+stacksToggle:SetScript("OnClick", function ()
+	local g = state.detail
+	if not g then return end
+	state.stacks = not state.stacks
+	state.selectedAuction = nil
+	state.pickNext = true
+	auctions:SetItems({})
+	showDetailMode(g)
+	loadDetail()
+	if GameTooltip:IsOwned(stacksToggle) then stacksToggle:GetScript("OnEnter")(stacksToggle) end
+end)
 
 refresh:SetScript("OnClick", function () loadDetail() end)
 
