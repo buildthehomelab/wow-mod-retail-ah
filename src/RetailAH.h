@@ -49,7 +49,7 @@ namespace RetailAH
         bool enabled = true;
         uint32 maxResults = 500;
         uint32 maxDetailRows = 300;
-        uint32 searchCooldownMs = 250;
+        uint32 searchCooldownMs = 0;
         bool reagentBank = true;
         bool transmog = true;
     };

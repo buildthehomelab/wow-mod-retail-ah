@@ -18,9 +18,11 @@
 #include "DBCStores.h"
 #include "GameTime.h"
 #include "Item.h"
+#include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "Timer.h"
 #include "Util.h"
 #include "WorldSession.h"
 #include <algorithm>
@@ -302,6 +304,7 @@ namespace RetailAH
         }
         wstrToLower(filter.name);
 
+        uint32 const started = getMSTime();
         Player* player = ctx.player;
         LocaleConstant locale = player->GetSession()->GetSessionDbLocaleIndex();
         LocaleConstant dbcLocale = player->GetSession()->GetSessionDbcLocale();
@@ -377,6 +380,9 @@ namespace RetailAH
             sorted.push_back(group);
 
         SendGroups(ctx, sorted, truncated);
+
+        LOG_DEBUG("module", "mod-retail-ah: search by {} walked {} auctions, sent {} groups in {} ms",
+            player->GetName(), ctx.house->GetAuctions().size(), sorted.size(), getMSTimeDiff(started, getMSTime()));
     }
 
     // F:<req>:<entry>,<entry>,...   Entries with nothing listed come back with zero available.

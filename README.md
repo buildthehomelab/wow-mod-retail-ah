@@ -68,8 +68,10 @@ over addon whispers (prefix `RAH`), the way mod-transmog-plus does. If the serve
 instead, so installing the addon early never locks anyone out of the auction house.
 
 On the server:
-- **Searches** walk the auction house once and group auctions by item. Each player can search
-  every 250 ms (configurable). Other modules' visibility rules are honoured: an auction is shown
+- **Searches** walk the auction house once and group auctions by item. The addon shows a
+  search it has already run this visit at once and swaps in the fresh answer when it arrives,
+  drops searches that a newer one replaced before they went out, and asks for item names and
+  icons for the whole result straight away. Other modules' visibility rules are honoured: an auction is shown
   only if `OnPlayerCanPlaceAuctionBid` allows it, which is how
   mod-ah-progression hides items above a player's progression. That needs
   `AHProgression.BlockBids = 1` (its default); with 0, RetailAH shows everything.
@@ -95,7 +97,7 @@ On the server:
 - One purchase takes from at most 100 listings; the window tells the player when that limits
   the quantity.
 - Every request walks the auction house on the world thread, so each character gets a small
-  request budget (12 at once, 6 per second) on top of the search cooldown. The addon waits and
+  request budget (12 at once, 6 per second), plus an optional search cooldown. The addon waits and
   retries when it runs out; a modified client can't flood the server.
 
 ## Install
@@ -125,7 +127,7 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 | `RetailAH.Enable` | 1 | 0 sends every player to the classic window. |
 | `RetailAH.MaxResults` | 500 | Most item groups one search returns (cut off alphabetically). |
 | `RetailAH.MaxDetailRows` | 300 | Most price tiers or listings shown for one item. |
-| `RetailAH.SearchCooldownMs` | 250 | Shortest time between two searches from one player. |
+| `RetailAH.SearchCooldownMs` | 0 | Extra gap between two searches from one player; 0 = off. |
 | `RetailAH.ReagentBank` | 1 | Post commodities from mod-reagent-bank-account's reagent bank too. |
 | `RetailAH.Transmog` | 1 | Mark and filter mod-transmog-plus appearances the account hasn't collected. |
 

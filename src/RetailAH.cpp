@@ -57,7 +57,7 @@ namespace RetailAH
         sConfig.enabled = sConfigMgr->GetOption<bool>("RetailAH.Enable", true);
         sConfig.maxResults = std::max<uint32>(50, sConfigMgr->GetOption<uint32>("RetailAH.MaxResults", 500));
         sConfig.maxDetailRows = std::max<uint32>(50, sConfigMgr->GetOption<uint32>("RetailAH.MaxDetailRows", 300));
-        sConfig.searchCooldownMs = sConfigMgr->GetOption<uint32>("RetailAH.SearchCooldownMs", 250);
+        sConfig.searchCooldownMs = sConfigMgr->GetOption<uint32>("RetailAH.SearchCooldownMs", 0);
         sConfig.reagentBank = sConfigMgr->GetOption<bool>("RetailAH.ReagentBank", true);
         sConfig.transmog = sConfigMgr->GetOption<bool>("RetailAH.Transmog", true);
         Appearances::LoadOptions();
@@ -219,9 +219,13 @@ namespace RetailAH
             return true;
         }
 
-        // Searches also sort and send hundreds of rows, so one per searchCooldownMs on top.
+        // Optional extra gap between searches, on top of the request budget. Requests are
+        // handled once per world tick, so two searches sent 300 ms apart can be handled closer
+        // together than that; off by default.
         bool SearchAllowed(SessionState& state)
         {
+            if (!sConfig.searchCooldownMs)
+                return true;
             uint32 now = getMSTime();
             if (state.lastSearch && getMSTimeDiff(state.lastSearch, now) < sConfig.searchCooldownMs)
                 return false;
@@ -259,7 +263,8 @@ namespace RetailAH
                 return;
             }
 
-            if (!TakeToken(itr->second) || ((command == "S" || command == "F") && !SearchAllowed(itr->second)))
+            // Favorites come in chunks of one lookup, so only real searches count for the gap.
+            if (!TakeToken(itr->second) || (command == "S" && !SearchAllowed(itr->second)))
             {
                 SendError(ctx, "busy");
                 return;

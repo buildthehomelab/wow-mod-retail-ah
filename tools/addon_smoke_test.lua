@@ -276,6 +276,22 @@ step("uncollected filter sends flag 4", function ()
 	RetailAHDB.filters.uncollected = nil
 end)
 step("search", function () RAH.Buy.Search() end)
+step("repeated search shows cached results at once", function ()
+	RAH.Buy.Search()
+	-- No tick yet: the server hasn't answered, but the last answer is already on screen.
+	assert(find(function (f) return f.__kind == "FontString" and f.__text == "2 items" end),
+		"cached results not shown before the answer")
+end)
+step("rapid searches drop the superseded ones", function ()
+	local searches = 0
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) if m:match("^S:") then searches = searches + 1 end original(p, m, c, t) end
+	for _ = 1, 8 do RAH.Buy.Search() end
+	tick(0.5)
+	SendAddonMessage = original
+	-- Four go out at once, the four after them replace each other in the queue.
+	assert(searches == 5, "expected 5 searches sent, got " .. searches)
+end)
 step("open commodity", function () RAH.Buy.OpenDetail({ entry = 2589, price = 13, units = 47, auctions = 3, flags = 5 }) end)
 step("buy now", function ()
 	-- The quote comes in through the debounced Q request; press the button's script.

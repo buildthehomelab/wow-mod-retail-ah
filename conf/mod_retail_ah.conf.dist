@@ -36,12 +36,15 @@ RetailAH.MaxDetailRows = 300
 
 #
 #    RetailAH.SearchCooldownMs
-#        Description: Shortest time between two searches from one player, in milliseconds.
-#                     Each search walks the whole auction house.
-#        Default:     250
+#        Description: Shortest time between two searches from one player, in milliseconds, on
+#                     top of the per-character request budget (12 at once, 6 a second). Each
+#                     search walks the whole auction house. 0 turns the extra gap off, which
+#                     keeps searches instant: the server answers requests once per world tick,
+#                     so a gap can refuse searches the player sent further apart than that.
+#        Default:     0
 #
 
-RetailAH.SearchCooldownMs = 250
+RetailAH.SearchCooldownMs = 0
 
 #
 #    RetailAH.ReagentBank
