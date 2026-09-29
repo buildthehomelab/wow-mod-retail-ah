@@ -45,7 +45,9 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   buyout only, as retail lists commodities.
 - With [mod-reagent-bank-account](https://github.com/buildthehomelab/mod-reagent-bank-account),
   your **reagent bank** counts too: its contents show in the item list (a blue `+` on the count),
-  and a post takes from your bags first and then the bank, like retail's reagent bank.
+  and a post takes from your bags first and then the bank, like retail's reagent bank. The
+  **Include reagent bank** checkbox above the item list turns that off, so the list and every
+  post stick to what's in your bags; the choice is remembered for the account.
 - Other items get a buyout and an optional starting bid, and you can post several identical
   ones at once.
 - The price starts at the current lowest listing (click any listing to match it), the deposit

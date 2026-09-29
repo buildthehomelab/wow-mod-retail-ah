@@ -385,7 +385,19 @@ namespace RetailAH
             uint32 bankUnits = 0;
         };
 
-        bool ResolveCommodity(Context const& ctx, uint32 bag, uint32 slot, CommoditySource& out)
+        // Optional last field of D and PC. Older addons leave it out and get the reagent bank.
+        enum PostFlags : uint32
+        {
+            POST_BAGS_ONLY = 0x1,  // leave the reagent bank alone
+        };
+
+        bool ParsePostFlags(std::vector<std::string_view> const& args, std::size_t index, uint32& flags)
+        {
+            flags = 0;
+            return args.size() <= index || args[index].empty() || ParseUInt(args[index], flags);
+        }
+
+        bool ResolveCommodity(Context const& ctx, uint32 bag, uint32 slot, bool useBank, CommoditySource& out)
         {
             if (bag == BAG_BY_ENTRY)
                 out.proto = sObjectMgr->GetItemTemplate(slot);
@@ -400,7 +412,7 @@ namespace RetailAH
             if (!IsCommodity(out.proto))
                 return false;
             out.bagUnits = CountUnits(BagItems(ctx.player, ItemKind(out.proto->ItemId)));
-            out.bankUnits = ReagentBank::Stored(ctx.player, out.proto->ItemId);
+            out.bankUnits = useBank ? ReagentBank::Stored(ctx.player, out.proto->ItemId) : 0;
             return true;
         }
 
@@ -653,16 +665,16 @@ namespace RetailAH
         Send(ctx.player, "XR:" + ctx.req + ":" + (ctx.house->GetAuction(id) ? "fail" : "ok"));
     }
 
-    // D:<req>:<bag>:<slot>:<quantity>:<hours>
+    // D:<req>:<bag>:<slot>:<quantity>:<hours>[:<flags>]
     // Answer: DR:<req>:<deposit>:<available>:<stack size>:<of which in the reagent bank>
     // Commodities go up in full stacks (bags first, then the reagent bank), other items one per
     // auction; the deposit is what posting exactly that will cost. bag BAG_BY_ENTRY: slot is an
     // item entry, for a commodity that may only be in the reagent bank.
     void HandleDeposit(Context& ctx, std::vector<std::string_view> const& args)
     {
-        uint32 bag = 0, slot = 0, quantity = 0, hours = 0;
+        uint32 bag = 0, slot = 0, quantity = 0, hours = 0, flags = 0;
         if (args.size() < 6 || !ParseUInt(args[2], bag) || !ParseUInt(args[3], slot) || !ParseUInt(args[4], quantity)
-            || !ParseHours(args[5], hours))
+            || !ParseHours(args[5], hours) || !ParsePostFlags(args, 6, flags))
         {
             SendError(ctx, "bad");
             return;
@@ -671,7 +683,7 @@ namespace RetailAH
         uint32 const seconds = hours * HOUR;
         uint64 deposit = 0;
         CommoditySource source;
-        if (ResolveCommodity(ctx, bag, slot, source))
+        if (ResolveCommodity(ctx, bag, slot, !(flags & POST_BAGS_ONLY), source))
         {
             uint32 stack = AuctionStack(source.proto);
             quantity = std::min(quantity, source.bagUnits + source.bankUnits);
@@ -699,17 +711,17 @@ namespace RetailAH
         Send(ctx.player, "DR:" + ctx.req + ":" + std::to_string(deposit) + ":" + std::to_string(available) + ":1:0");
     }
 
-    // PC:<req>:<bag>:<slot>:<quantity>:<unit price>:<hours>[:<unit starting bid>]
+    // PC:<req>:<bag>:<slot>:<quantity>:<unit price>:<hours>[:<unit starting bid>[:<flags>]]
     // Posts `quantity` units of a commodity, gathered from every stack in the bags and then the
     // reagent bank, as full stacks. The starting bid is optional and per unit; without one (or 0)
     // the stacks are buyout only, as retail lists commodities. bag may be BAG_BY_ENTRY with the
     // item entry in slot.
     void HandlePostCommodity(Context& ctx, std::vector<std::string_view> const& args)
     {
-        uint32 bag = 0, slot = 0, quantity = 0, unitPrice = 0, hours = 0, unitBid = 0;
+        uint32 bag = 0, slot = 0, quantity = 0, unitPrice = 0, hours = 0, unitBid = 0, flags = 0;
         if (args.size() < 7 || !ParseUInt(args[2], bag) || !ParseUInt(args[3], slot) || !ParseUInt(args[4], quantity)
             || !ParseUInt(args[5], unitPrice) || !ParseHours(args[6], hours) || !quantity || !unitPrice
-            || (args.size() >= 8 && !args[7].empty() && !ParseUInt(args[7], unitBid)))
+            || (args.size() >= 8 && !args[7].empty() && !ParseUInt(args[7], unitBid)) || !ParsePostFlags(args, 8, flags))
         {
             SendError(ctx, "bad");
             return;
@@ -720,7 +732,7 @@ namespace RetailAH
             unitBid = unitPrice;
 
         CommoditySource source;
-        if (!ResolveCommodity(ctx, bag, slot, source))
+        if (!ResolveCommodity(ctx, bag, slot, !(flags & POST_BAGS_ONLY), source))
             return SendPostResult(ctx, 0, 0, "item");
 
         ItemTemplate const* proto = source.proto;
