@@ -59,6 +59,7 @@ namespace RetailAH
     {
         HELLO_REAGENT_BANK = 0x1,
         HELLO_APPEARANCES  = 0x2,  // mod-transmog-plus collections: marker and filter
+        HELLO_STAT_FILTERS = 0x4,  // the search takes a stat mask
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -166,6 +167,26 @@ namespace RetailAH
         Look State(Player const* player, ItemTemplate const* proto);
         // Drops the cached looks so the next question reads them fresh.
         void Forget(uint32 accountId);
+    }
+
+    // ---- RetailAHStats.cpp: the stats an item carries, for the Buy tab's stat filters ---------
+
+    namespace GearStats
+    {
+        // Bit positions in the search's stat mask; the addon's STATS list uses the same order.
+        enum class Stat : uint8
+        {
+            Strength, Agility, Stamina, Intellect, Spirit,
+            AttackPower, SpellPower, Hit, Crit, Haste, Expertise, ArmorPen,
+            Defense, Dodge, Parry, Block, Resilience,
+            ManaRegen, SpellPen, Sockets,
+            None = 0xFF,
+        };
+
+        // From the template alone: stat slots, heirloom scaling, on-equip spells, sockets.
+        uint32 TemplateMask(ItemTemplate const* proto);
+        // The template plus the random enchantments ("of the Monkey") rolled on this copy.
+        uint32 ItemMask(ItemTemplate const* proto, Item const* item);
     }
 }
 

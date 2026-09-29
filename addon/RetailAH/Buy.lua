@@ -69,8 +69,9 @@ resultCount:SetHeight(14)
 -----------------------------------------
 -- filter panel
 
+-- Two columns: the general filters on the left, stats on the right.
 local filters = CreateFrame("Frame", nil, panel)
-filters:SetSize(220, 284)
+filters:SetSize(430, 284)
 filters:SetPoint("TOPLEFT", filterButton, "BOTTOMLEFT", 0, -4)
 filters:SetFrameStrata("DIALOG")
 filters:SetBackdrop({
@@ -131,6 +132,35 @@ for i, q in ipairs(RAH.QUALITIES) do
 	rarityChecks[i] = cb
 end
 
+-- stats: the item must have every one that's checked
+local statsDivider = RAH.Solid(filters, "ARTWORK", 1, 1, 1, 0.12)
+statsDivider:SetWidth(1)
+statsDivider:SetPoint("TOPLEFT", filters, "TOPLEFT", 212, -12)
+statsDivider:SetPoint("BOTTOMLEFT", filters, "BOTTOMLEFT", 212, 12)
+
+local statsLabel = RAH.CreateLabel(filters, "Stats", "GameFontNormalSmall")
+statsLabel:SetPoint("TOPLEFT", filters, "TOPLEFT", 226, -14)
+local statsHint = RAH.CreateLabel(filters, "", "GameFontDisableSmall")
+statsHint:SetPoint("LEFT", statsLabel, "RIGHT", 8, 0)
+
+local statChecks = {}
+for i, label in ipairs(RAH.STATS) do
+	local cb = RAH.CreateCheck(filters, label)
+	cb.bit = bit.lshift(1, i - 1)
+	if i == 1 then
+		cb:SetPoint("TOPLEFT", statsLabel, "BOTTOMLEFT", -4, -2)
+	elseif i == 11 then
+		cb:SetPoint("LEFT", statChecks[1], "RIGHT", 80, 0)
+	else
+		cb:SetPoint("TOPLEFT", statChecks[i - 1], "BOTTOMLEFT", 0, 4)
+	end
+	statChecks[i] = cb
+end
+
+local function statMask()
+	return RAH.statFilters and RetailAHDB.filters.stats or 0
+end
+
 local resetFilters = RAH.CreateButton(filters, "Reset", 80, 20)
 resetFilters:SetPoint("BOTTOMRIGHT", filters, "BOTTOMRIGHT", -10, 10)
 
@@ -145,6 +175,11 @@ local function saveFilters()
 	for _, cb in ipairs(rarityChecks) do
 		if cb:GetChecked() then f.qualities[cb.quality] = true end
 	end
+	local mask = 0
+	for _, cb in ipairs(statChecks) do
+		if cb:GetChecked() then mask = mask + cb.bit end
+	end
+	f.stats = mask > 0 and mask or nil
 end
 
 local function loadFilters()
@@ -156,11 +191,24 @@ local function loadFilters()
 	minLevel:SetText(f.minLevel and tostring(f.minLevel) or "")
 	maxLevel:SetText(f.maxLevel and tostring(f.maxLevel) or "")
 	for _, cb in ipairs(rarityChecks) do cb:SetChecked(f.qualities and f.qualities[cb.quality]) end
+	for _, cb in ipairs(statChecks) do
+		cb:SetChecked(RAH.statFilters and bit.band(f.stats or 0, cb.bit) ~= 0)
+		RAH.SetEnabled(cb, RAH.statFilters)
+	end
+	if RAH.statFilters then
+		statsHint:SetText("must have all checked")
+		statsHint:SetTextColor(0.5, 0.5, 0.5)
+	else
+		statsHint:SetText("needs a server update")
+		statsHint:SetTextColor(1, 0.3, 0.3)
+	end
 end
 
 local function filtersActive()
 	local f = RetailAHDB.filters
-	if f.usable or f.exact or f.minLevel or f.maxLevel or (f.uncollected and RAH.appearances) then return true end
+	if f.usable or f.exact or f.minLevel or f.maxLevel or (f.uncollected and RAH.appearances) or statMask() > 0 then
+		return true
+	end
 	return f.qualities and next(f.qualities) ~= nil
 end
 
@@ -168,8 +216,10 @@ local function updateFilterButton()
 	filterButton:SetText(filtersActive() and "|cff00ff00Filters|r" or "Filters")
 end
 
-for _, cb in ipairs({ usableCheck, exactCheck, uncollectedCheck, unpack(rarityChecks) }) do
-	cb:SetScript("OnClick", function () saveFilters(); updateFilterButton() end)
+for _, list in ipairs({ { usableCheck, exactCheck, uncollectedCheck }, rarityChecks, statChecks }) do
+	for _, cb in ipairs(list) do
+		cb:SetScript("OnClick", function () saveFilters(); updateFilterButton() end)
+	end
 end
 for _, eb in ipairs({ minLevel, maxLevel }) do
 	eb:SetScript("OnTextChanged", function () saveFilters(); updateFilterButton() end)
@@ -419,10 +469,14 @@ results:SetPoint("BOTTOMRIGHT", resultsPane, "BOTTOMRIGHT", -4, 4)
 -- answer is on its way.
 local resultCache = {}
 
-local function showResults(rows, truncated, emptyText, keepScroll)
+-- stats: the stat mask the rows were searched with, so opening one lists only the copies that
+-- have those stats.
+local function showResults(rows, truncated, emptyText, keepScroll, stats)
 	state.results = {}
 	for i, r in ipairs(rows) do
-		table.insert(state.results, { entry = r[1], price = r[2], units = r[3], auctions = r[4], flags = r[5], order = i })
+		table.insert(state.results, {
+			entry = r[1], price = r[2], units = r[3], auctions = r[4], flags = r[5], order = i, stats = stats,
+		})
 	end
 	results:SetEmptyText(emptyText or "No items found.")
 	results:SetItems(state.results, keepScroll)
@@ -457,15 +511,17 @@ function Buy.Search()
 	end
 	local n = state.node
 	local name = searchBox:GetText():gsub("^%s+", ""):gsub("%s+$", "")
+	-- The stat mask rides on the flags field, so the name stays the last field.
+	local stats = statMask()
 
 	local fields = {
-		flags, f.minLevel or 0, f.maxLevel or 0, mask,
+		stats > 0 and (flags .. "," .. stats) or flags, f.minLevel or 0, f.maxLevel or 0, mask,
 		n and n.class or -1, n and n.subclass or -1, n and n.invtype or -1, name,
 	}
 	local key = table.concat(fields, ":")
 	local cached = resultCache[key]
 	if cached then
-		showResults(cached.rows, cached.truncated)
+		showResults(cached.rows, cached.truncated, nil, nil, stats)
 	else
 		resultCount:SetText("Searching...")
 	end
@@ -483,7 +539,7 @@ function Buy.Search()
 		end
 		local truncated = result.meta[2] == "1"
 		resultCache[key] = { rows = result.rows, truncated = truncated }
-		showResults(result.rows, truncated, nil, cached ~= nil)
+		showResults(result.rows, truncated, nil, cached ~= nil, stats)
 	end)
 end
 
@@ -973,7 +1029,7 @@ function loadDetail()
 			updateQuote()
 		end)
 	else
-		RAH.Request("I", { g.entry }, function (result, err)
+		RAH.Request("I", (g.stats or 0) > 0 and { g.entry, g.stats } or { g.entry }, function (result, err)
 			if state.detailReq ~= token or not result then return end
 			-- The look may have been collected since the search (bought and equipped one).
 			local look = tonumber(result.meta[2])

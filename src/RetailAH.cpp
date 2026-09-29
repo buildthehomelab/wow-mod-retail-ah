@@ -201,7 +201,8 @@ namespace RetailAH
             // A new visit reads the transmog collection fresh.
             Appearances::Forget(player->GetSession()->GetAccountId());
 
-            uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0);
+            uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0)
+                | HELLO_STAT_FILTERS;
             Send(player, "HELLO:" + req + ":" + std::to_string(PROTOCOL_VERSION) + ":"
                 + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent)
                 + ":" + std::to_string(flags));

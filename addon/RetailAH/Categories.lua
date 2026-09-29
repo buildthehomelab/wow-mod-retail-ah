@@ -92,3 +92,12 @@ RAH.QUALITIES = {
 	{ 0, ITEM_QUALITY0_DESC }, { 1, ITEM_QUALITY1_DESC }, { 2, ITEM_QUALITY2_DESC }, { 3, ITEM_QUALITY3_DESC },
 	{ 4, ITEM_QUALITY4_DESC }, { 5, ITEM_QUALITY5_DESC }, { 7, ITEM_QUALITY7_DESC },
 }
+
+-- The stat checkboxes in the filter panel, in the server's bit order (GearStats::Stat): the
+-- first is bit 0. Shown in two columns of ten, top to bottom.
+RAH.STATS = {
+	"Strength", "Agility", "Stamina", "Intellect", "Spirit",
+	"Attack Power", "Spell Power", "Hit", "Crit", "Haste",
+	"Expertise", "Armor Pen.", "Defense", "Dodge", "Parry",
+	"Block", "Resilience", "Mana Regen", "Spell Pen.", "Sockets",
+}
