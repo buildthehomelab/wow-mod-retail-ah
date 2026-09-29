@@ -167,6 +167,10 @@ ERR_AUCTION_STARTED = "Auction created."
 UIParent = newObject("Frame", "UIParent")
 WorldFrame = newObject("Frame", "WorldFrame")
 GameTooltip = newObject("GameTooltip", "GameTooltip")
+ShoppingTooltip1 = newObject("GameTooltip", "ShoppingTooltip1")
+ShoppingTooltip2 = newObject("GameTooltip", "ShoppingTooltip2")
+local compared = 0
+function GameTooltip_ShowCompareItem() compared = compared + 1 end
 DEFAULT_CHAT_FRAME = { AddMessage = function (_, m) print("  [chat] " .. m) end }
 GameFontHighlightSmall, GameFontNormalSmall = {}, {}
 UIPanelWindows, StaticPopupDialogs, SlashCmdList, UISpecialFrames = {}, {}, {}, {}
@@ -202,7 +206,8 @@ local function serve(msg)
 	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:7")
 	elseif cmd == "S" or cmd == "F" then
 		reply("SR:" .. req .. ":2:0")
-		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,8")
+		-- 15210 is one suffix of a random-enchant item (flags 8 + 16, suffix -7, factor 55).
+		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,24,-7,55")
 		reply("SE:" .. req)
 	elseif cmd == "C" then
 		reply("CR:" .. req .. ":2589"); reply("CD:" .. req .. ":10,20,0;13,27,7"); reply("CE:" .. req)
@@ -307,12 +312,44 @@ step("stat filters: the mask rides on the flags field, and on opening a result",
 	SendAddonMessage = original
 	local detail
 	for _, m in ipairs(sent) do if m:match("^I:") then detail = m end end
-	assert(detail and detail:match("^I:%d+:15210:258$"), "item view did not carry the stat mask: " .. tostring(detail))
+	assert(detail and detail:match("^I:%d+:15210:258:%-7$"), "item view did not carry the stat mask and suffix: " .. tostring(detail))
 	RAH.Buy.CloseDetail()
 	for _, cb in ipairs({ agi, crit }) do cb:SetChecked(false); cb.__scripts.OnClick(cb) end
 	assert(RetailAHDB.filters.stats == nil, "stat mask not cleared")
 end)
 step("search", function () RAH.Buy.Search() end)
+step("a suffix group links and opens only its suffix", function ()
+	local gear
+	for _, f in ipairs(allFrames) do
+		local items = rawget(f, "items")
+		if type(items) == "table" then
+			for _, g in ipairs(items) do if g.entry == 15210 and g.auctions then gear = g end end
+		end
+	end
+	assert(gear and gear.link == "item:15210:0:0:0:0:0:-7:55", "suffix missing from the result link: " .. tostring(gear and gear.link))
+	local sent
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) if m:match("^I:") then sent = m end original(p, m, c, t) end
+	RAH.Buy.OpenDetail(gear)
+	tick(0.5)
+	SendAddonMessage = original
+	assert(sent and sent:match("^I:%d+:15210:0:%-7$"), "item view did not ask for the suffix: " .. tostring(sent))
+	RAH.Buy.CloseDetail()
+end)
+step("hovering an item compares with equipped gear by default", function ()
+	local row = find(function (f) return f.__kind == "Button" and rawget(f, "item") and rawget(f, "item").link end)
+	assert(row, "no result row")
+	local before = compared
+	row.__scripts.OnEnter(row)
+	assert(compared == before + 1, "no comparison on hover")
+	row.__scripts.OnLeave(row)
+	SlashCmdList.RETAILAH("compare off")
+	row.__scripts.OnEnter(row)
+	assert(compared == before + 1, "compared although turned off")
+	row.__scripts.OnLeave(row)
+	SlashCmdList.RETAILAH("compare")
+	assert(not RetailAHDB.noCompare, "toggle did not turn it back on")
+end)
 step("repeated search shows cached results at once", function ()
 	RAH.Buy.Search()
 	-- No tick yet: the server hasn't answered, but the last answer is already on screen.

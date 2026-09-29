@@ -12,6 +12,7 @@ RAH.GROUP_COMMODITY = 1
 RAH.GROUP_BID_ONLY = 2
 RAH.GROUP_OWN = 4
 RAH.GROUP_UNCOLLECTED = 8  -- a mod-transmog-plus appearance the account hasn't collected
+RAH.GROUP_SUFFIX = 16      -- one suffix of a random-enchant item ("of the Monkey")
 RAH.AUCTION_OWN = 1
 RAH.AUCTION_HIGH_BIDDER = 2
 RAH.AUCTION_HAS_BID = 4
@@ -221,6 +222,25 @@ pollFrame:SetScript("OnUpdate", function (self, elapsed)
 	end
 	if arrived then RAH.Fire("ITEM_INFO") end
 end)
+
+-- An item's tooltip, with what you have equipped in that slot beside it, like retail's auction
+-- house. /rah compare off leaves the comparison to Shift, as elsewhere in the game.
+function RAH.ItemTooltip(owner, link, extra)
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	GameTooltip:SetHyperlink(link)
+	if extra then extra(GameTooltip) end
+	GameTooltip:Show()
+	if not RetailAHDB.noCompare or IsModifiedClick("COMPAREITEMS") then
+		GameTooltip_ShowCompareItem()
+	end
+end
+
+function RAH.HideItemTooltip()
+	GameTooltip:Hide()
+	ShoppingTooltip1:Hide()
+	ShoppingTooltip2:Hide()
+	if ShoppingTooltip3 then ShoppingTooltip3:Hide() end
+end
 
 function RAH.QualityColor(quality)
 	local c = ITEM_QUALITY_COLORS[quality or 1] or ITEM_QUALITY_COLORS[1]
@@ -571,8 +591,17 @@ SlashCmdList.RETAILAH = function (msg)
 	elseif msg == "reset" then
 		RAH.ResetPosition()
 		RAH.Print("window position reset.")
+	elseif msg == "compare" or msg == "compare on" or msg == "compare off" then
+		if msg == "compare" then
+			RetailAHDB.noCompare = not RetailAHDB.noCompare or nil
+		else
+			RetailAHDB.noCompare = msg == "compare off" or nil
+		end
+		RAH.Print(RetailAHDB.noCompare and "item tooltips compare with your gear only while you hold Shift."
+			or "item tooltips compare with your equipped gear.")
 	else
 		RAH.Print("|cffffd200/rah classic|r or |cffffd200/rah retail|r picks which window opens at the auctioneer. "
-			.. "|cffffd200/rah reset|r moves the window back.")
+			.. "|cffffd200/rah reset|r moves the window back. "
+			.. "|cffffd200/rah compare|r turns the equipped-gear comparison on hover on or off.")
 	end
 end
