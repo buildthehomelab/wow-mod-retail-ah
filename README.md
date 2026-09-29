@@ -20,7 +20,10 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 - **Commodities** (anything that stacks): type a quantity and see the total, filled from the
   cheapest listings first. **Buy any quantity**: if you want 7 herbs and the cheapest stack has
   20, you buy 7 and the seller keeps the other 13 listed. Click a price row to ask for
-  everything up to that price.
+  everything up to that price. After a purchase the quantity stays, so **Buy Now** again buys
+  the same amount at the new cheapest prices (Shift-click skips the confirmation).
+  **Bid on Stacks** switches to the separate stacks, to bid on one or buy a whole stack (bots and
+  the old window list stacks with a starting bid).
 - **Everything else**: every listing of the item with bid, buyout, item level (random suffixes
   included) and time left. Bid or buy out. The cheapest listing is picked for you, with its price
   beside **Buy Now**; after each purchase the next cheapest is picked, so you can keep buying
@@ -38,6 +41,8 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   sellable items.
 - **Commodities are posted as a quantity at a unit price.** The module gathers them from all your
   bags and lists them as full stacks, so you never split stacks by hand.
+  An optional **bid per unit** lists the stacks with a starting bid too; left empty they are
+  buyout only, as retail lists commodities.
 - With [mod-reagent-bank-account](https://github.com/buildthehomelab/mod-reagent-bank-account),
   your **reagent bank** counts too: its contents show in the item list (a blue `+` on the count),
   and a post takes from your bags first and then the bank, like retail's reagent bank.

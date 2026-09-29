@@ -71,6 +71,8 @@ function methods:HasFocus() return false end
 function methods:GetID() return self.__id or 0 end
 function methods:SetID(i) self.__id = i end
 function methods:NumLines() return 0 end
+function methods:GetStringWidth() return #self.__text * 7 end
+function methods:IsOwned() return false end
 function methods:GetVerticalScroll() return 0 end
 frameMeta.__index = function (t, k)
 	if methods[k] then return methods[k] end
@@ -286,6 +288,19 @@ step("buy now", function ()
 	assert(lastPopup, "no confirm dialog")
 	print("  confirm: " .. lastPopup.text)
 	lastPopup.data()
+end)
+step("commodity: bid on stacks toggle", function ()
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "Button" and f.__text == "Bid on Stacks" and f.__scripts.OnClick then f.__scripts.OnClick(f) end
+	end
+end)
+step("commodity: back to quantity", function ()
+	local found
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "Button" and f.__text == "Buy by Quantity" and f.__scripts.OnClick then found = f end
+	end
+	assert(found, "toggle label didn't change")
+	found.__scripts.OnClick(found)
 end)
 step("open gear", function () RAH.Buy.OpenDetail({ entry = 15210, price = 45000, units = 2, auctions = 2, flags = 0 }) end)
 local function findText(pattern)

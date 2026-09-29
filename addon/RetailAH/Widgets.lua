@@ -106,10 +106,25 @@ function RAH.CreateInset(parent)
 			tile = true, tileSize = 16, edgeSize = 12,
 			insets = { left = 3, right = 3, top = 3, bottom = 3 },
 		})
-		pane:SetBackdropColor(0, 0, 0, 0.45)
-		pane:SetBackdropBorderColor(0.4, 0.4, 0.45, 0.9)
+		pane:SetBackdropColor(0.03, 0.03, 0.04, 0.9)
+		pane:SetBackdropBorderColor(0.35, 0.35, 0.4, 0.9)
 	end
 	return pane
+end
+
+-- A FauxScrollFrame's bar: DragonUI's thin one, or a dark track behind the stock one.
+function RAH.SkinScrollBar(scroll, scrollName)
+	local bar = _G[scrollName .. "ScrollBar"]
+	if not bar then return end
+	local _, CP = RAH.Dragon()
+	if CP and CP.ReskinScrollBar then
+		pcall(CP.ReskinScrollBar, scroll, scroll, -7, 18, -7, true)
+		return
+	end
+	-- The stock arrows sit just outside the slider.
+	local track = solid(bar, "BACKGROUND", 0, 0, 0, 0.45)
+	track:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 18)
+	track:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, -18)
 end
 
 -----------------------------------------
@@ -297,10 +312,7 @@ function RAH.CreateList(parent, spec)
 		FauxScrollFrame_OnVerticalScroll(self, offset, rowHeight, function () list:Refresh() end)
 	end)
 	list.scroll = scroll
-	local _, CP = RAH.Dragon()
-	if CP and CP.ReskinScrollBar and _G[scrollName .. "ScrollBar"] then
-		pcall(CP.ReskinScrollBar, scroll, scroll, -7, 18, -7, true)
-	end
+	RAH.SkinScrollBar(scroll, scrollName)
 
 	-- lay the columns out once the list knows its width
 	local headers, cells = {}, {}

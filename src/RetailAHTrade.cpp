@@ -433,7 +433,7 @@ namespace RetailAH
         // Creates one auction from reagent bank units, doing what the sell handler does for items
         // from the bags: deposit, auction and item rows, achievement, logs. The bank row is
         // debited in the same transaction.
-        uint32 PostFromBank(Context const& ctx, ItemTemplate const* proto, uint32 count, uint32 buyout, uint32 hours)
+        uint32 PostFromBank(Context const& ctx, ItemTemplate const* proto, uint32 count, uint32 bid, uint32 buyout, uint32 hours)
         {
             Player* player = ctx.player;
             WorldSession* session = player->GetSession();
@@ -475,7 +475,7 @@ namespace RetailAH
             auction->item_template = item->GetEntry();
             auction->itemCount = count;
             auction->owner = player->GetGUID();
-            auction->startbid = buyout;
+            auction->startbid = bid;
             auction->bidder = ObjectGuid::Empty;
             auction->bid = 0;
             auction->buyout = buyout;
@@ -501,13 +501,13 @@ namespace RetailAH
             if (session->HasPermission(rbac::RBAC_PERM_LOG_GM_TRADE))
             {
                 LOG_GM(session->GetAccountId(), "GM {} (Account: {}) created auction: {} (Item: {} Count: {}) Bid: {} Buyout: {} (from the reagent bank)",
-                    player->GetName(), session->GetAccountId(), auction->Id, proto->Name1, count, buyout, buyout);
+                    player->GetName(), session->GetAccountId(), auction->Id, proto->Name1, count, bid, buyout);
             }
 
             LOG_INFO("entities.player.auctionhouse", "AuctionHouse: Account: {} (IP: {}), Player [{}] (GUID: {}) created auction #{} from the reagent bank: "
                 "Item '{}' (Entry: {}) x{}, StartBid: {} copper, Buyout: {} copper, Deposit: {} copper",
                 session->GetAccountId(), session->GetRemoteAddress(), player->GetName(), player->GetGUID().GetCounter(), auction->Id,
-                proto->Name1, proto->ItemId, count, buyout, buyout, deposit);
+                proto->Name1, proto->ItemId, count, bid, buyout, deposit);
 
             return auction->Id;
         }
@@ -699,19 +699,25 @@ namespace RetailAH
         Send(ctx.player, "DR:" + ctx.req + ":" + std::to_string(deposit) + ":" + std::to_string(available) + ":1:0");
     }
 
-    // PC:<req>:<bag>:<slot>:<quantity>:<unit price>:<hours>
+    // PC:<req>:<bag>:<slot>:<quantity>:<unit price>:<hours>[:<unit starting bid>]
     // Posts `quantity` units of a commodity, gathered from every stack in the bags and then the
-    // reagent bank, as full stacks. Buyout only: the starting bid equals the buyout. bag may be
-    // BAG_BY_ENTRY with the item entry in slot.
+    // reagent bank, as full stacks. The starting bid is optional and per unit; without one (or 0)
+    // the stacks are buyout only, as retail lists commodities. bag may be BAG_BY_ENTRY with the
+    // item entry in slot.
     void HandlePostCommodity(Context& ctx, std::vector<std::string_view> const& args)
     {
-        uint32 bag = 0, slot = 0, quantity = 0, unitPrice = 0, hours = 0;
+        uint32 bag = 0, slot = 0, quantity = 0, unitPrice = 0, hours = 0, unitBid = 0;
         if (args.size() < 7 || !ParseUInt(args[2], bag) || !ParseUInt(args[3], slot) || !ParseUInt(args[4], quantity)
-            || !ParseUInt(args[5], unitPrice) || !ParseHours(args[6], hours) || !quantity || !unitPrice)
+            || !ParseUInt(args[5], unitPrice) || !ParseHours(args[6], hours) || !quantity || !unitPrice
+            || (args.size() >= 8 && !args[7].empty() && !ParseUInt(args[7], unitBid)))
         {
             SendError(ctx, "bad");
             return;
         }
+        if (unitBid > unitPrice)
+            return SendPostResult(ctx, 0, 0, "price");
+        if (!unitBid)
+            unitBid = unitPrice;
 
         CommoditySource source;
         if (!ResolveCommodity(ctx, bag, slot, source))
@@ -733,6 +739,7 @@ namespace RetailAH
         {
             uint32 const count = chunk.count;
             uint32 const buyout = unitPrice * count;
+            uint32 const bid = unitBid * count;
             if (!ctx.player->HasEnoughMoney(Deposit(ctx.houseEntry, hours * HOUR, proto, count)))
             {
                 status = "money";
@@ -741,7 +748,7 @@ namespace RetailAH
 
             if (chunk.fromBank)
             {
-                if (!PostFromBank(ctx, proto, count, buyout, hours))
+                if (!PostFromBank(ctx, proto, count, bid, buyout, hours))
                 {
                     status = "fail";
                     break;
@@ -773,7 +780,7 @@ namespace RetailAH
                 break;
             }
 
-            if (!Sell(ctx, picks, buyout, buyout, hours))
+            if (!Sell(ctx, picks, bid, buyout, hours))
             {
                 status = "fail";
                 break;
