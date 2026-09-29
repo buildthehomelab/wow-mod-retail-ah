@@ -403,13 +403,11 @@ function RAH.CreateList(parent, spec)
 		row:SetScript("OnEnter", function (self)
 			local link = self.item and spec.link and spec.link(self.item)
 			if link then
-				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-				GameTooltip:SetHyperlink(link)
-				if spec.tooltipExtra then spec.tooltipExtra(self.item, GameTooltip) end
-				GameTooltip:Show()
+				local item = self.item
+				RAH.ItemTooltip(self, link, spec.tooltipExtra and function (tip) spec.tooltipExtra(item, tip) end)
 			end
 		end)
-		row:SetScript("OnLeave", function () GameTooltip:Hide() end)
+		row:SetScript("OnLeave", RAH.HideItemTooltip)
 		rows[r] = row
 	end
 

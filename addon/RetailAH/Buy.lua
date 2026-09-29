@@ -396,7 +396,7 @@ local function isUncollected(g)
 end
 
 local function itemName(g)
-	local info = RAH.Item(g.entry)
+	local info = RAH.Item(g.link)
 	if not info then return "|cff808080Loading...|r" end
 	local _, _, _, hex = RAH.QualityColor(info.quality)
 	return (RAH.IsFavorite(g.entry) and STAR_INLINE or "") .. hex .. info.name .. "|r" .. (isUncollected(g) and NEW_LOOK or "")
@@ -406,13 +406,13 @@ local function itemIcon(entry)
 	return RAH.ItemIcon(entry)
 end
 
-local function sortName(entry)
-	local info = RAH.Item(entry)
+local function sortName(item)
+	local info = RAH.Item(item)
 	return info and info.name or "~"
 end
 
-local function sortLevel(entry)
-	local info = RAH.Item(entry)
+local function sortLevel(item)
+	local info = RAH.Item(item)
 	return info and info.itemLevel or 0
 end
 
@@ -429,10 +429,10 @@ local results = RAH.CreateList(resultsPane, {
 			sort = function (g) return g.auctions > 0 and g.price or math.huge end },
 		{ title = "Name", icon = function (g) return itemIcon(g.entry) end,
 			text = function (g) return itemName(g) end,
-			sort = function (g) return sortName(g.entry) end },
+			sort = function (g) return sortName(g.link) end },
 		{ title = "Level", width = 60, align = "CENTER", defaultDesc = true,
-			text = function (g) local l = sortLevel(g.entry); return l > 0 and tostring(l) or "" end,
-			sort = function (g) return sortLevel(g.entry) end },
+			text = function (g) local l = sortLevel(g.link); return l > 0 and tostring(l) or "" end,
+			sort = function (g) return sortLevel(g.link) end },
 		{ title = "Available", width = 100, align = "RIGHT", defaultDesc = true,
 			text = function (g)
 				local n = bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0 and g.units or g.auctions
@@ -441,15 +441,15 @@ local results = RAH.CreateList(resultsPane, {
 			sort = function (g) return bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0 and g.units or g.auctions end },
 	},
 	defaultSort = 1,
-	link = function (g) return "item:" .. g.entry end,
+	link = function (g) return g.link end,
 	onClick = function (g, button)
 		if button == "RightButton" then
 			RAH.SetFavorite(g.entry, not RAH.IsFavorite(g.entry))
 		elseif IsModifiedClick("CHATLINK") then
-			local info = RAH.Item(g.entry)
+			local info = RAH.Item(g.link)
 			if info then ChatEdit_InsertLink(info.link) end
 		elseif IsModifiedClick("DRESSUP") then
-			local info = RAH.Item(g.entry)
+			local info = RAH.Item(g.link)
 			if info then DressUpItemLink(info.link) end
 		elseif g.auctions > 0 then
 			Buy.OpenDetail(g)
@@ -474,14 +474,16 @@ local resultCache = {}
 local function showResults(rows, truncated, emptyText, keepScroll, stats)
 	state.results = {}
 	for i, r in ipairs(rows) do
+		-- r[6], r[7]: the suffix of a group that search split by suffix ("of the Monkey").
 		table.insert(state.results, {
 			entry = r[1], price = r[2], units = r[3], auctions = r[4], flags = r[5], order = i, stats = stats,
+			randomProperty = r[6] or 0, link = RAH.ItemString(r[1], r[6], r[7]),
 		})
 	end
 	results:SetEmptyText(emptyText or "No items found.")
 	results:SetItems(state.results, keepScroll)
 	local entries = {}
-	for i, g in ipairs(state.results) do entries[i] = g.entry end
+	for i, g in ipairs(state.results) do entries[i] = g.link end
 	RAH.Prefetch(entries)
 	if truncated then
 		-- Short: it shares the row with the search box. Narrowing the search shows the rest.
@@ -597,13 +599,12 @@ local detailIcon = RAH.CreateItemButton(detail, 34)
 detailIcon:SetPoint("LEFT", back, "RIGHT", 12, -6)
 detailIcon:SetScript("OnEnter", function (self)
 	if state.detail then
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetHyperlink("item:" .. state.detail.entry)
-		if isUncollected(state.detail) then GameTooltip:AddLine(UNCOLLECTED_TIP, 1, 0.5, 1) end
-		GameTooltip:Show()
+		RAH.ItemTooltip(self, state.detail.link, function (tip)
+			if isUncollected(state.detail) then tip:AddLine(UNCOLLECTED_TIP, 1, 0.5, 1) end
+		end)
 	end
 end)
-detailIcon:SetScript("OnLeave", function () GameTooltip:Hide() end)
+detailIcon:SetScript("OnLeave", RAH.HideItemTooltip)
 
 local detailName = detail:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 detailName:SetPoint("LEFT", detailIcon, "RIGHT", 10, 0)
@@ -664,7 +665,7 @@ end
 local function updateDetailHeader()
 	local g = state.detail
 	if not g then return end
-	local info = RAH.Item(g.entry)
+	local info = RAH.Item(g.link)
 	if info then
 		local _, _, _, hex = RAH.QualityColor(info.quality)
 		detailName:SetWidth(0)
@@ -1029,7 +1030,14 @@ function loadDetail()
 			updateQuote()
 		end)
 	else
-		RAH.Request("I", (g.stats or 0) > 0 and { g.entry, g.stats } or { g.entry }, function (result, err)
+		-- A group search split by suffix lists only that suffix's copies.
+		local args = { g.entry }
+		if bit.band(g.flags, RAH.GROUP_SUFFIX) ~= 0 then
+			args = { g.entry, g.stats or 0, g.randomProperty }
+		elseif (g.stats or 0) > 0 then
+			args = { g.entry, g.stats }
+		end
+		RAH.Request("I", args, function (result, err)
 			if state.detailReq ~= token or not result then return end
 			-- The look may have been collected since the search (bought and equipped one).
 			local look = tonumber(result.meta[2])

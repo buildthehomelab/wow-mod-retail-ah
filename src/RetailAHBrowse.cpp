@@ -9,8 +9,10 @@
  *   O   own auctions        -> OR, OD rows, OE
  *   BL  auctions bid on     -> LR, LD rows, LE
  *
- * Search groups every visible auction by item entry, like retail's browse list. A commodity
- * (anything that stacks) is priced per unit; other items by their cheapest buyout.
+ * Search groups every visible auction by item entry, like retail's browse list, except that
+ * random-enchant gear gets a group per suffix: "of the Monkey" and "of the Bear" are different
+ * items to a buyer. A commodity (anything that stacks) is priced per unit; other items by their
+ * cheapest buyout.
  */
 
 #include "RetailAH.h"
@@ -71,6 +73,7 @@ namespace RetailAH
             GROUP_BID_ONLY  = 0x2,  // nothing has a buyout; the price is the cheapest bid
             GROUP_OWN       = 0x4,
             GROUP_UNCOLLECTED = 0x8,  // a mod-transmog-plus look the account doesn't have
+            GROUP_SUFFIX      = 0x10, // only the copies with this group's random property id
         };
 
         enum SearchFlags : uint32
@@ -111,9 +114,8 @@ namespace RetailAH
         // Cached per id and locale; there are only a few hundred of them.
         std::unordered_map<int32, std::wstring> sSuffixes[TOTAL_LOCALES];
 
-        std::wstring const& SuffixName(Item const* item, LocaleConstant dbcLocale)
+        std::wstring const& SuffixName(int32 id, LocaleConstant dbcLocale)
         {
-            int32 id = item->GetItemRandomPropertyId();
             std::unordered_map<int32, std::wstring>& cache = sSuffixes[dbcLocale < TOTAL_LOCALES ? dbcLocale : LOCALE_enUS];
             auto itr = cache.find(id);
             if (itr != cache.end())
@@ -195,6 +197,9 @@ namespace RetailAH
         struct Group
         {
             ItemTemplate const* proto = nullptr;
+            bool bySuffix = false;     // search split this entry by suffix
+            int32 randomProperty = 0;  // the suffix this group is for; 0 = none
+            uint32 suffixFactor = 0;
             uint64 minPrice = 0;  // per unit for commodities; 0 = no buyout seen yet
             uint64 minBid = 0;
             uint32 units = 0;
@@ -249,6 +254,8 @@ namespace RetailAH
                 flags |= GROUP_COMMODITY;
             if (group.own)
                 flags |= GROUP_OWN;
+            if (group.bySuffix)
+                flags |= GROUP_SUFFIX;
             if (Appearances::State(player, group.proto) == Appearances::Look::Uncollected)
                 flags |= GROUP_UNCOLLECTED;
 
@@ -260,7 +267,8 @@ namespace RetailAH
             }
 
             return std::to_string(group.proto->ItemId) + "," + std::to_string(price) + "," + std::to_string(group.units)
-                + "," + std::to_string(group.auctions) + "," + std::to_string(flags);
+                + "," + std::to_string(group.auctions) + "," + std::to_string(flags) + ","
+                + std::to_string(group.randomProperty) + "," + std::to_string(group.suffixFactor);
         }
 
         void SendGroups(Context const& ctx, std::vector<Group const*> const& groups, bool truncated)
@@ -325,7 +333,8 @@ namespace RetailAH
         // stats match? A random-enchant item that fails either is checked auction by auction.
         struct Verdict { bool passes; bool nameMatches; bool statsMatch; };
         std::unordered_map<uint32, Verdict> verdicts;
-        std::unordered_map<uint32, Group> groups;
+        // By entry, and for random-enchant gear by entry and suffix.
+        std::unordered_map<uint64, Group> groups;
 
         for (auto const& [id, auction] : ctx.house->GetAuctions())
         {
@@ -349,15 +358,20 @@ namespace RetailAH
             if (!vItr->second.passes)
                 continue;
 
-            if (!vItr->second.nameMatches || !vItr->second.statsMatch)
+            ItemTemplate const* proto = sObjectMgr->GetItemTemplate(auction->item_template);
+            Item* item = nullptr;
+            if (HasRandomName(proto))
             {
-                Item* item = sAuctionMgr->GetAItem(auction->item_guid);
+                item = sAuctionMgr->GetAItem(auction->item_guid);
                 if (!item)
                     continue;
-                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(auction->item_template);
+            }
+
+            if (!vItr->second.nameMatches || !vItr->second.statsMatch)
+            {
                 if (!vItr->second.nameMatches)
                 {
-                    std::wstring const& suffix = SuffixName(item, dbcLocale);
+                    std::wstring const& suffix = SuffixName(item->GetItemRandomPropertyId(), dbcLocale);
                     if (suffix.empty() || !NameMatches(filter, ItemName(proto, locale) + suffix))
                         continue;
                 }
@@ -365,22 +379,37 @@ namespace RetailAH
                     continue;
             }
 
-            Group& group = groups[auction->item_template];
+            int32 randomProperty = item ? item->GetItemRandomPropertyId() : 0;
+            Group& group = groups[(uint64(auction->item_template) << 32) | uint32(randomProperty)];
             if (!group.proto)
-                group.proto = sObjectMgr->GetItemTemplate(auction->item_template);
+            {
+                group.proto = proto;
+                group.bySuffix = item != nullptr;
+                group.randomProperty = randomProperty;
+                group.suffixFactor = item ? item->GetItemSuffixFactor() : 0;
+            }
             AddToGroup(group, auction, player);
         }
 
         // Alphabetical, so a capped result is a predictable slice; the addon re-sorts anyway.
         // Names are looked up once, and only the part that is sent gets fully sorted.
-        std::vector<std::pair<std::wstring const*, Group const*>> named;
+        std::vector<std::pair<std::wstring, Group const*>> named;
         named.reserve(groups.size());
-        for (auto const& [entry, group] : groups)
-            named.emplace_back(&ItemName(group.proto, locale), &group);
+        for (auto const& [key, group] : groups)
+        {
+            std::wstring name = ItemName(group.proto, locale);
+            if (group.randomProperty)
+                name += SuffixName(group.randomProperty, dbcLocale);
+            named.emplace_back(std::move(name), &group);
+        }
 
         auto byName = [](auto const& a, auto const& b)
         {
-            return *a.first != *b.first ? *a.first < *b.first : a.second->proto->ItemId < b.second->proto->ItemId;
+            if (a.first != b.first)
+                return a.first < b.first;
+            if (a.second->proto->ItemId != b.second->proto->ItemId)
+                return a.second->proto->ItemId < b.second->proto->ItemId;
+            return a.second->randomProperty < b.second->randomProperty;
         };
         std::size_t const limit = GetConfig().maxResults;
         bool truncated = named.size() > limit;
@@ -474,15 +503,19 @@ namespace RetailAH
         SendList(ctx, "C", std::to_string(entry), rows);
     }
 
-    // I:<req>:<entry>[:<stat mask>]   Rows: <id>,<count>,<current bid>,<minimum bid>,<buyout>,
-    // <seconds left>,<flags>,<random property id>,<suffix factor>; cheapest buyout first,
-    // bid-only last. With a stat mask, only the copies that have those stats (the "of the
-    // Monkey" ones out of a stat search).
+    // I:<req>:<entry>[:<stat mask>[:<random property id>]]   Rows: <id>,<count>,<current bid>,
+    // <minimum bid>,<buyout>,<seconds left>,<flags>,<random property id>,<suffix factor>;
+    // cheapest buyout first, bid-only last. With a stat mask, only the copies that have those
+    // stats (the "of the Monkey" ones out of a stat search); with a random property id, only the
+    // copies with that suffix (0 = none), as search groups them.
     void HandleItemDetails(Context& ctx, std::vector<std::string_view> const& args)
     {
         uint32 entry = 0;
         uint32 statMask = 0;
-        if (args.size() < 3 || !ParseUInt(args[2], entry) || (args.size() > 3 && !ParseUInt(args[3], statMask)))
+        int32 randomProperty = 0;
+        bool bySuffix = args.size() > 4;
+        if (args.size() < 3 || !ParseUInt(args[2], entry) || (args.size() > 3 && !ParseUInt(args[3], statMask))
+            || (bySuffix && !ParseInt(args[4], randomProperty)))
         {
             SendError(ctx, "bad");
             return;
@@ -497,8 +530,14 @@ namespace RetailAH
         {
             if (auction->item_template != entry || !visibility.Visible(auction))
                 continue;
-            if (perItem && !HasStats(GearStats::ItemMask(proto, sAuctionMgr->GetAItem(auction->item_guid)), statMask))
-                continue;
+            if (perItem || bySuffix)
+            {
+                Item const* item = sAuctionMgr->GetAItem(auction->item_guid);
+                if (bySuffix && (item ? item->GetItemRandomPropertyId() : 0) != randomProperty)
+                    continue;
+                if (perItem && !HasStats(GearStats::ItemMask(proto, item), statMask))
+                    continue;
+            }
             auctions.push_back(auction);
         }
 
