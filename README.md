@@ -41,6 +41,8 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   sellable items.
 - **Commodities are posted as a quantity at a unit price.** The module gathers them from all your
   bags and lists them as full stacks, so you never split stacks by hand.
+  An optional **bid per unit** lists the stacks with a starting bid too; left empty they are
+  buyout only, as retail lists commodities.
 - With [mod-reagent-bank-account](https://github.com/buildthehomelab/mod-reagent-bank-account),
   your **reagent bank** counts too: its contents show in the item list (a blue `+` on the count),
   and a post takes from your bags first and then the bank, like retail's reagent bank.

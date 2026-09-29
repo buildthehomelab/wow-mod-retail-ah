@@ -79,6 +79,10 @@ local bidLabel = RAH.CreateLabel(fields, "Starting Bid", "GameFontNormalSmall")
 bidLabel:SetPoint("TOPLEFT", priceLabel, "BOTTOMLEFT", 0, -20)
 local bidInput = RAH.CreateMoneyInput(fields)
 bidInput:SetPoint("TOPLEFT", fields, "TOPLEFT", 90, -64)
+-- Optional: left at 0 the auction is buyout only.
+local bidHint = fields:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+bidHint:SetPoint("TOPLEFT", bidLabel, "BOTTOMLEFT", 0, -1)
+bidHint:SetText("optional")
 
 local durationLabel = RAH.CreateLabel(fields, AUCTION_DURATION or "Duration")
 durationLabel:SetPoint("TOPLEFT", fields, "TOPLEFT", 0, -102)
@@ -313,7 +317,8 @@ local function updatePostButton()
 	local item, qty = state.item, quantity()
 	local price = priceInput:GetCopper()
 	local ok = item and qty > 0 and qty <= state.available and price > 0
-	if ok and not item.commodity then
+	if ok then
+		-- Per unit for commodities, like the price; never above it.
 		local bid = bidInput:GetCopper()
 		ok = bid == 0 or bid <= price
 	end
@@ -407,7 +412,7 @@ local function showForm(item)
 		hint:Hide()
 		fields:Show()
 		priceLabel:SetText(item.commodity and "Unit Price" or "Buyout Price")
-		if item.commodity then bidLabel:Hide(); bidInput:Hide() else bidLabel:Show(); bidInput:Show() end
+		bidLabel:SetText(item.commodity and "Bid per Unit" or "Starting Bid")
 		listingNote:Show()
 	else
 		slotEmpty:Show()
@@ -514,7 +519,8 @@ postButton:SetScript("OnClick", function ()
 	RAH.QuietChat(5)
 	local args
 	if item.commodity then
-		args = { item.bag, item.slot, qty, price, hours() }
+		-- The bid goes last, so a server without it just posts buyout only.
+		args = { item.bag, item.slot, qty, price, hours(), bidInput:GetCopper() }
 	else
 		local bid = bidInput:GetCopper()
 		if bid == 0 then bid = price end
