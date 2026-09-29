@@ -1,7 +1,8 @@
 -- Sell tab: pick an item (right-click it in your bags, drop it on the slot, or pick it from the
 -- list), set quantity, price and duration, and post. Commodities are priced per unit and go up
--- as full stacks gathered from all your bags and, when the server has mod-reagent-bank-account,
--- the reagent bank; other items get a buyout and an optional bid.
+-- as full stacks gathered from all your bags and, when the server has mod-reagent-bank-account
+-- and the player hasn't turned it off, the reagent bank; other items get a buyout and an
+-- optional bid.
 
 local RAH = RetailAH
 
@@ -27,13 +28,24 @@ local DURATIONS = { 12, 24, 48 }
 -- The server's "bag" for addressing a commodity by entry, so it can come from the reagent bank.
 local BAG_BY_ENTRY = 255
 local BANK_MARK = "|cff4fc3f7+|r"
+-- Last field of D and PC: leave the reagent bank alone.
+local POST_BAGS_ONLY = 1
+
+-- Selling from the reagent bank is on unless the player turned it off (account wide).
+local function useBank()
+	return RAH.reagentBank and RetailAHDB.sellFromBank ~= false
+end
+
+local function postFlags()
+	return useBank() and 0 or POST_BAGS_ONLY
+end
 
 -----------------------------------------
 -- the form
 
 local form = RAH.CreateInset(panel)
 form:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-form:SetSize(300, 300)
+form:SetSize(300, 290)
 
 local slot = RAH.CreateItemButton(form, 42)
 slot:SetPoint("TOPLEFT", form, "TOPLEFT", 14, -14)
@@ -122,8 +134,21 @@ bagPane:SetPoint("TOPLEFT", form, "BOTTOMLEFT", 0, -6)
 bagPane:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
 bagPane:SetWidth(300)
 
+local bankCheck = RAH.CreateCheck(bagPane, "Include reagent bank")
+bankCheck:SetPoint("TOPLEFT", bagPane, "TOPLEFT", 6, -2)
+bankCheck.label:SetTextColor(0.31, 0.76, 0.97)
+bankCheck:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:AddLine("Include reagent bank")
+	GameTooltip:AddLine("List what's in your reagent bank with your bags, and post commodities from it once "
+		.. "your bags run out. Off: only what's in your bags.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+bankCheck:SetScript("OnLeave", function () GameTooltip:Hide() end)
+bankCheck:Hide()
+
 local bagItems = RAH.CreateList(bagPane, {
-	rows = 7,
+	rows = 6,
 	rowHeight = 20,
 	columns = {
 		{ title = "Your Items", icon = function (b) return b.texture end,
@@ -152,8 +177,22 @@ local bagItems = RAH.CreateList(bagPane, {
 	onClick = function (b) Sell.SelectGroup(b) end,
 	empty = "Nothing in your bags can be auctioned.",
 })
-bagItems:SetPoint("TOPLEFT", bagPane, "TOPLEFT", 4, -4)
 bagItems:SetPoint("BOTTOMRIGHT", bagPane, "BOTTOMRIGHT", -4, 4)
+
+-- The checkbox only takes room when the realm has a reagent bank.
+local function placeBagList()
+	bagItems:ClearAllPoints()
+	bagItems:SetPoint("BOTTOMRIGHT", bagPane, "BOTTOMRIGHT", -4, 4)
+	if RAH.reagentBank then
+		bankCheck:SetChecked(useBank())
+		bankCheck:Show()
+		bagItems:SetPoint("TOPLEFT", bagPane, "TOPLEFT", 4, -26)
+	else
+		bankCheck:Hide()
+		bagItems:SetPoint("TOPLEFT", bagPane, "TOPLEFT", 4, -4)
+	end
+end
+placeBagList()
 
 -----------------------------------------
 -- current listings, to price against
@@ -275,7 +314,7 @@ local function scanBags()
 	end
 
 	-- Reagent bank contents join their bag stacks, or get a row of their own.
-	for entry, amount in pairs(state.bank) do
+	for entry, amount in pairs(useBank() and state.bank or {}) do
 		local identity = "c" .. entry
 		local g = groups[identity]
 		if g then
@@ -332,7 +371,7 @@ local function requestDeposit()
 		if state.item ~= item then return end
 		local token = {}
 		state.depositReq = token
-		RAH.Request("D", { item.bag, item.slot, math.max(quantity(), 1), hours() }, function (result)
+		RAH.Request("D", { item.bag, item.slot, math.max(quantity(), 1), hours(), postFlags() }, function (result)
 			if state.depositReq ~= token or not result then return end
 			state.deposit = tonumber(result[1]) or 0
 			state.available = tonumber(result[2]) or 0
@@ -479,7 +518,7 @@ local function relocate()
 		Sell.Clear()
 		return
 	end
-	item.bag, item.slot, item.count = g.bag, g.slot, g.count
+	item.bag, item.slot, item.count, item.bank = g.bag, g.slot, g.count, g.bank
 	requestDeposit()
 end
 
@@ -520,7 +559,7 @@ postButton:SetScript("OnClick", function ()
 	local args
 	if item.commodity then
 		-- The bid goes last, so a server without it just posts buyout only.
-		args = { item.bag, item.slot, qty, price, hours(), bidInput:GetCopper() }
+		args = { item.bag, item.slot, qty, price, hours(), bidInput:GetCopper(), postFlags() }
 	else
 		local bid = bidInput:GetCopper()
 		if bid == 0 then bid = price end
@@ -625,6 +664,7 @@ local function refreshBags()
 end
 
 local function loadBank()
+	placeBagList()
 	if not RAH.reagentBank then
 		state.bank = {}
 		return
@@ -645,6 +685,16 @@ end
 
 RAH.On("BAGS", function ()
 	if panel:IsShown() then refreshBags() end
+end)
+
+bankCheck:SetScript("OnClick", function (self)
+	RetailAHDB.sellFromBank = self:GetChecked() and true or false
+	refreshBags()
+	-- A bank-only pick disappears; anything else now counts with or without the bank.
+	relocate()
+	if state.item and state.item.commodity then
+		qtyBox:SetText(tostring(state.item.count + (state.item.bank or 0)))
+	end
 end)
 RAH.On("POSTED", function () if panel:IsShown() then loadBank() end end)
 

@@ -50,7 +50,7 @@ function methods:SetText(t) self.__text = t == nil and "" or tostring(t) end
 function methods:GetText() return self.__text end
 function methods:GetNumber() return tonumber(self.__text) or 0 end
 function methods:SetChecked(c) self.__checked = c and 1 or nil end
-function methods:GetChecked() return self.__checked end
+function methods:GetChecked() return rawget(self, "__checked") end
 function methods:GetWidth() return self.__width end
 function methods:GetHeight() return self.__height end
 function methods:SetWidth(w) self.__width = w end
@@ -365,6 +365,30 @@ step("post bank-only", function ()
 	for _, f in ipairs(allFrames) do
 		if f.__kind == "Button" and f.__text == "Post" then f.__scripts.OnClick(f) end
 	end
+end)
+step("reagent bank toggle off: bank-only pick cleared, bags-only flag sent", function ()
+	local check = find(function (f) local l = rawget(f, "label") return type(l) == "table" and l.__text == "Include reagent bank" end)
+	assert(check and check:IsShown(), "reagent bank checkbox not shown")
+	assert(check:GetChecked(), "reagent bank should default to on")
+	RAH.Sell.SelectGroup({ identity = "c2447", bag = 255, slot = 2447, entry = 2447, link = "item:2447", name = "Peacebloom",
+		texture = "x", quality = 1, commodity = true, count = 0, bank = 30, sellPrice = 4 })
+	check:SetChecked(false)
+	check.__scripts.OnClick(check)
+	assert(RetailAHDB.sellFromBank == false, "setting not saved")
+	assert(not find(function (f) return f.__kind == "FontString" and f.__text:find("Peacebloom") end),
+		"bank-only item still selected")
+
+	local sent
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) if m:match("^D:") then sent = m end original(p, m, c, t) end
+	RAH.Sell.Select(0, 1)
+	tick(0.5)
+	SendAddonMessage = original
+	assert(sent and sent:match(":1$"), "deposit request without the bags-only flag: " .. tostring(sent))
+
+	check:SetChecked(true)
+	check.__scripts.OnClick(check)
+	assert(RetailAHDB.sellFromBank == true, "setting not saved back on")
 end)
 step("select gear", function () RAH.Sell.Select(0, 3) end)
 step("auctions tab", function () RAH.SelectTab(3) end)
