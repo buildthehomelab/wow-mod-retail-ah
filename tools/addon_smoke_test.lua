@@ -104,6 +104,7 @@ function SetPortraitTexture() end
 function OpenAllBags() end
 function IsAddOnLoaded() return false end
 function IsModifiedClick() return false end
+function IsShiftKeyDown() return false end
 function CursorHasItem() return false end
 function GetCursorInfo() return nil end
 function ClearCursor() end
@@ -205,7 +206,9 @@ local function serve(msg)
 		reply("IR:" .. req .. ":15210"); reply("ID:" .. req .. ":101,1,3000,3150,45000,7200,4,-7,55;102,1,0,5000,0,600,1,0,0"); reply("IE:" .. req)
 	elseif cmd == "Q" then reply("QR:" .. req .. ":2589:5:50:0")
 	elseif cmd == "B" then reply("BR:" .. req .. ":ok:5:50:5:50")
-	elseif cmd == "P" then reply("PR:" .. req .. ":bid")
+	elseif cmd == "P" then
+		local id, price = msg:match("^P:[^:]*:(%d+):(%d+)")
+		reply("PR:" .. req .. ":" .. ((id == "101" and price == "45000") and "bought" or "bid"))
 	elseif cmd == "X" then reply("XR:" .. req .. ":ok")
 	elseif cmd == "D" then reply("DR:" .. req .. ":60:77:20:50")
 	elseif cmd == "RB" then reply("RR:" .. req); reply("RD:" .. req .. ":2589,50;2447,30"); reply("RE:" .. req)
@@ -269,6 +272,29 @@ step("buy now", function ()
 	lastPopup.data()
 end)
 step("open gear", function () RAH.Buy.OpenDetail({ entry = 15210, price = 45000, units = 2, auctions = 2, flags = 0 }) end)
+local function findText(pattern)
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "FontString" and f.__text:find(pattern) then return f.__text end
+	end
+end
+step("cheapest listing preselected, buy it", function ()
+	local price = findText("45,000") or findText("4g 50s") or findText("GoldIcon")
+	assert(price, "no buyout price shown beside Buy Now")
+	print("  price shown: " .. price)
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "Button" and f.__text == "Buy Now" and f.__enabled and f.__scripts.OnEnter then
+			f.__scripts.OnClick(f)
+		end
+	end
+	assert(lastPopup, "no confirm")
+	print("  confirm: " .. lastPopup.text)
+	lastPopup.data()
+end)
+step("tally shows the purchase", function ()
+	local tally = findText("^Purchased:")
+	assert(tally, "no tally")
+	print("  " .. tally)
+end)
 step("favorites", function () RAH.SetFavorite(2589, true); RAH.Buy.ShowFavorites() end)
 step("sell tab", function () RAH.SelectTab(2) end)
 step("select commodity", function () RAH.Sell.Select(0, 1) end)

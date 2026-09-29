@@ -22,7 +22,10 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   20, you buy 7 and the seller keeps the other 13 listed. Click a price row to ask for
   everything up to that price.
 - **Everything else**: every listing of the item with bid, buyout, item level (random suffixes
-  included) and time left. Bid or buy out.
+  included) and time left. Bid or buy out. The cheapest listing is picked for you, with its price
+  beside **Buy Now**; after each purchase the next cheapest is picked, so you can keep buying
+  (Shift-click skips the confirmation).
+- The item view keeps a running **Purchased: N for X** total while you stay on the item.
 - Everything you buy arrives in your mailbox, as it always has.
 
 **Sell**
