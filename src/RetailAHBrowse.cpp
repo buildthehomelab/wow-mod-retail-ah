@@ -5,6 +5,7 @@
  *   F   favorites lookup    -> the same answer as a search, one group per asked entry
  *   C   commodity tiers     -> CR:<req>:<entry>, CD rows, CE
  *   I   one item's auctions -> IR:<req>:<entry>:<look state>, ID rows, IE
+ *       (both S and I take an optional stat mask; see RetailAHStats.cpp)
  *   O   own auctions        -> OR, OD rows, OE
  *   BL  auctions bid on     -> LR, LD rows, LE
  *
@@ -142,6 +143,7 @@ namespace RetailAH
             uint32 minLevel = 0;
             uint32 maxLevel = 0;
             uint32 qualityMask = 0;  // bit per quality; 0 = any
+            uint32 statMask = 0;     // bit per GearStats::Stat; the item needs all of them
             int32 itemClass = -1;
             int32 itemSubClass = -1;
             int32 inventoryType = -1;
@@ -183,6 +185,11 @@ namespace RetailAH
         bool HasRandomName(ItemTemplate const* proto)
         {
             return proto->RandomProperty || proto->RandomSuffix;
+        }
+
+        bool HasStats(uint32 have, uint32 want)
+        {
+            return (have & want) == want;
         }
 
         struct Group
@@ -283,11 +290,15 @@ namespace RetailAH
         }
     }
 
-    // S:<req>:<flags>:<minLevel>:<maxLevel>:<qualityMask>:<class>:<subclass>:<invType>:<name>
+    // S:<req>:<flags>[,<stat mask>]:<minLevel>:<maxLevel>:<qualityMask>:<class>:<subclass>:<invType>:<name>
+    // The stat mask rides on the flags field so the name stays last and may hold ':'. Only a
+    // server that says HELLO_STAT_FILTERS gets one.
     void HandleSearch(Context& ctx, std::vector<std::string_view> const& args)
     {
         Filter filter;
-        if (args.size() < 10 || !ParseUInt(args[2], filter.flags) || !ParseUInt(args[3], filter.minLevel)
+        std::vector<std::string_view> flags = args.size() > 2 ? Split(args[2], ',') : std::vector<std::string_view>{};
+        if (args.size() < 10 || !ParseUInt(flags[0], filter.flags)
+            || (flags.size() > 1 && !ParseUInt(flags[1], filter.statMask)) || !ParseUInt(args[3], filter.minLevel)
             || !ParseUInt(args[4], filter.maxLevel) || !ParseUInt(args[5], filter.qualityMask)
             || !ParseInt(args[6], filter.itemClass) || !ParseInt(args[7], filter.itemSubClass)
             || !ParseInt(args[8], filter.inventoryType))
@@ -310,8 +321,9 @@ namespace RetailAH
         LocaleConstant dbcLocale = player->GetSession()->GetSessionDbcLocale();
         VisibilityCache visibility(player);
 
-        // Per entry: does the template pass the filters, and does its plain name match?
-        struct Verdict { bool passes; bool nameMatches; };
+        // Per entry: does the template pass the filters, and do its plain name and its template
+        // stats match? A random-enchant item that fails either is checked auction by auction.
+        struct Verdict { bool passes; bool nameMatches; bool statsMatch; };
         std::unordered_map<uint32, Verdict> verdicts;
         std::unordered_map<uint32, Group> groups;
 
@@ -321,13 +333,14 @@ namespace RetailAH
             if (vItr == verdicts.end())
             {
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(auction->item_template);
-                Verdict verdict { false, false };
+                Verdict verdict { false, false, false };
                 if (proto && MatchesTemplate(filter, proto, player) && visibility.Visible(auction))
                 {
                     verdict.passes = true;
                     verdict.nameMatches = filter.name.empty() || NameMatches(filter, ItemName(proto, locale));
+                    verdict.statsMatch = !filter.statMask || HasStats(GearStats::TemplateMask(proto), filter.statMask);
                     // A random-suffix item can still match on its suffix, auction by auction.
-                    if (!verdict.nameMatches && !HasRandomName(proto))
+                    if ((!verdict.nameMatches || !verdict.statsMatch) && !HasRandomName(proto))
                         verdict.passes = false;
                 }
                 vItr = verdicts.emplace(auction->item_template, verdict).first;
@@ -336,14 +349,19 @@ namespace RetailAH
             if (!vItr->second.passes)
                 continue;
 
-            if (!vItr->second.nameMatches)
+            if (!vItr->second.nameMatches || !vItr->second.statsMatch)
             {
                 Item* item = sAuctionMgr->GetAItem(auction->item_guid);
                 if (!item)
                     continue;
-                std::wstring const& suffix = SuffixName(item, dbcLocale);
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(auction->item_template);
-                if (suffix.empty() || !NameMatches(filter, ItemName(proto, locale) + suffix))
+                if (!vItr->second.nameMatches)
+                {
+                    std::wstring const& suffix = SuffixName(item, dbcLocale);
+                    if (suffix.empty() || !NameMatches(filter, ItemName(proto, locale) + suffix))
+                        continue;
+                }
+                if (!vItr->second.statsMatch && !HasStats(GearStats::ItemMask(proto, item), filter.statMask))
                     continue;
             }
 
@@ -456,22 +474,33 @@ namespace RetailAH
         SendList(ctx, "C", std::to_string(entry), rows);
     }
 
-    // I:<req>:<entry>   Rows: <id>,<count>,<current bid>,<minimum bid>,<buyout>,<seconds left>,
-    // <flags>,<random property id>,<suffix factor>; cheapest buyout first, bid-only last.
+    // I:<req>:<entry>[:<stat mask>]   Rows: <id>,<count>,<current bid>,<minimum bid>,<buyout>,
+    // <seconds left>,<flags>,<random property id>,<suffix factor>; cheapest buyout first,
+    // bid-only last. With a stat mask, only the copies that have those stats (the "of the
+    // Monkey" ones out of a stat search).
     void HandleItemDetails(Context& ctx, std::vector<std::string_view> const& args)
     {
         uint32 entry = 0;
-        if (args.size() < 3 || !ParseUInt(args[2], entry))
+        uint32 statMask = 0;
+        if (args.size() < 3 || !ParseUInt(args[2], entry) || (args.size() > 3 && !ParseUInt(args[3], statMask)))
         {
             SendError(ctx, "bad");
             return;
         }
 
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+        bool perItem = proto && statMask && !HasStats(GearStats::TemplateMask(proto), statMask);
+
         VisibilityCache visibility(ctx.player);
         std::vector<AuctionEntry*> auctions;
         for (auto const& [id, auction] : ctx.house->GetAuctions())
-            if (auction->item_template == entry && visibility.Visible(auction))
-                auctions.push_back(auction);
+        {
+            if (auction->item_template != entry || !visibility.Visible(auction))
+                continue;
+            if (perItem && !HasStats(GearStats::ItemMask(proto, sAuctionMgr->GetAItem(auction->item_guid)), statMask))
+                continue;
+            auctions.push_back(auction);
+        }
 
         std::sort(auctions.begin(), auctions.end(), [](AuctionEntry const* a, AuctionEntry const* b)
         {
@@ -504,7 +533,6 @@ namespace RetailAH
         }
 
         // Meta: entry and the look's state (0 not an appearance, 1 collected, 2 not collected).
-        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
         SendList(ctx, "I", std::to_string(entry) + ":" + std::to_string(uint32(Appearances::State(ctx.player, proto))), rows);
     }
 

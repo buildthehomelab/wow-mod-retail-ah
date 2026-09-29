@@ -1,6 +1,6 @@
--- The RetailAH window: chrome, tabs along the bottom, the player's money, a status line and the
--- Classic button. Each tab file adds its panel with RAH.AddTab. Drag it by the title bar; it
--- remembers where it was put (/rah reset puts it back).
+-- The RetailAH window: chrome, tabs along the bottom, the player's money and a status line.
+-- /rah classic switches to the old window. Each tab file adds its panel with RAH.AddTab. Drag
+-- it by the title bar; it remembers where it was put (/rah reset puts it back).
 
 local RAH = RetailAH
 
@@ -68,7 +68,7 @@ content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 34)
 RAH.content = content
 
 -----------------------------------------
--- bottom bar: money, status, classic
+-- bottom bar: money, status
 
 local money = RAH.CreateMoneyText(frame, "GameFontHighlight")
 money:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 12)
@@ -87,17 +87,6 @@ function RAH.Status(text, isError)
 	if isError then status:SetTextColor(1, 0.25, 0.25) else status:SetTextColor(1, 0.82, 0) end
 	RAH.After(8, function () if mine == statusToken then status:SetText("") end end)
 end
-
-local classic = RAH.CreateButton(frame, "Classic", 80, 20)
-classic:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 8)
-classic:SetScript("OnClick", function () RAH.ShowClassic() end)
-classic:SetScript("OnEnter", function (self)
-	GameTooltip:SetOwner(self, "ANCHOR_TOP")
-	GameTooltip:AddLine("Classic auction window")
-	GameTooltip:AddLine("Use the old window (and Auctionator) for this visit. |cffffd200/rah classic|r makes it the default.", 1, 1, 1, true)
-	GameTooltip:Show()
-end)
-classic:SetScript("OnLeave", function () GameTooltip:Hide() end)
 
 RAH.On("MONEY", function () money:SetMoney(GetMoney()) end)
 

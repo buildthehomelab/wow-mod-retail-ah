@@ -457,6 +457,7 @@ function RAH.OnHello(fields)
 	-- Capability flags; an older server sends none.
 	RAH.reagentBank = bit.band(tonumber(fields[4]) or 0, 1) ~= 0
 	RAH.appearances = bit.band(tonumber(fields[4]) or 0, 2) ~= 0
+	RAH.statFilters = bit.band(tonumber(fields[4]) or 0, 4) ~= 0
 	RAH.Fire("READY")
 end
 
@@ -561,14 +562,17 @@ SlashCmdList.RETAILAH = function (msg)
 	if msg == "classic" then
 		RetailAHDB.classic = true
 		RAH.Print("the classic window opens from now on. |cffffd200/rah retail|r switches back.")
+		-- At the auctioneer already: switch now.
+		if RAH.active then showClassic() end
 	elseif msg == "retail" then
 		RetailAHDB.classic = nil
-		RAH.Print("the retail window opens from now on.")
+		RAH.Print("the retail window opens from now on"
+			.. ((AuctionFrame and AuctionFrame:IsShown()) and ", starting with your next visit." or "."))
 	elseif msg == "reset" then
 		RAH.ResetPosition()
 		RAH.Print("window position reset.")
 	else
 		RAH.Print("|cffffd200/rah classic|r or |cffffd200/rah retail|r picks which window opens at the auctioneer. "
-			.. "The Classic button in the retail window switches for one visit. |cffffd200/rah reset|r moves the window back.")
+			.. "|cffffd200/rah reset|r moves the window back.")
 	end
 end

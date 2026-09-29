@@ -199,7 +199,7 @@ local function serve(msg)
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
-	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:3")
+	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:7")
 	elseif cmd == "S" or cmd == "F" then
 		reply("SR:" .. req .. ":2:0")
 		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,8")
@@ -274,6 +274,43 @@ step("uncollected filter sends flag 4", function ()
 	SendAddonMessage = original
 	assert(sent and sent:match("^S:%d+:4:"), "search did not carry the uncollected flag: " .. tostring(sent))
 	RetailAHDB.filters.uncollected = nil
+end)
+step("stat filters: the mask rides on the flags field, and on opening a result", function ()
+	assert(RAH.statFilters, "stat filter flag not read")
+	local function check(label)
+		return find(function (f) local l = rawget(f, "label") return type(l) == "table" and l.__text == label end)
+	end
+	local agi, crit = check("Agility"), check("Crit")
+	assert(agi and crit, "stat checkboxes missing")
+	for _, cb in ipairs({ agi, crit }) do cb:SetChecked(true); cb.__scripts.OnClick(cb) end
+	assert(RetailAHDB.filters.stats == 2 + 256, "stat mask not saved: " .. tostring(RetailAHDB.filters.stats))
+	assert(find(function (f) return f.__kind == "Button" and f.__text:find("00ff00Filters") end), "Filters button not lit")
+
+	local sent = {}
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) table.insert(sent, m); original(p, m, c, t) end
+	RAH.Buy.Search()
+	tick(0.5)
+	local search
+	for _, m in ipairs(sent) do if m:match("^S:") then search = m end end
+	assert(search and search:match("^S:%d+:0,258:"), "search did not carry the stat mask: " .. tostring(search))
+	local gear
+	for _, f in ipairs(allFrames) do
+		local items = rawget(f, "items")
+		if type(items) == "table" then
+			for _, g in ipairs(items) do if g.entry == 15210 and g.auctions then gear = g end end
+		end
+	end
+	assert(gear, "gear result not listed")
+	RAH.Buy.OpenDetail(gear)
+	tick(0.5)
+	SendAddonMessage = original
+	local detail
+	for _, m in ipairs(sent) do if m:match("^I:") then detail = m end end
+	assert(detail and detail:match("^I:%d+:15210:258$"), "item view did not carry the stat mask: " .. tostring(detail))
+	RAH.Buy.CloseDetail()
+	for _, cb in ipairs({ agi, crit }) do cb:SetChecked(false); cb.__scripts.OnClick(cb) end
+	assert(RetailAHDB.filters.stats == nil, "stat mask not cleared")
 end)
 step("search", function () RAH.Buy.Search() end)
 step("repeated search shows cached results at once", function ()
@@ -396,6 +433,18 @@ step("bids view", function ()
 	for _, f in ipairs(allFrames) do
 		if f.__kind == "Button" and f.__text == "Bids" and f.__scripts.OnClick then f.__scripts.OnClick(f) end
 	end
+end)
+step("no Classic button; /rah classic switches at once", function ()
+	assert(not find(function (f) return f.__kind == "Button" and f.__text == "Classic" end), "Classic button still there")
+	local shown
+	local original = AuctionFrame_Show
+	AuctionFrame_Show = function () shown = true end
+	SlashCmdList.RETAILAH("classic")
+	AuctionFrame_Show = original
+	assert(shown and not RAH.active, "didn't switch to the classic window")
+	SlashCmdList.RETAILAH("retail")
+	assert(not RetailAHDB.classic, "retail not saved")
+	RetailAHFrame:Show(); RAH.active = true
 end)
 step("close", function () RetailAHFrame:Hide(); fire("AUCTION_HOUSE_CLOSED") end)
 step("module missing", function ()

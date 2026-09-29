@@ -13,6 +13,11 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 - Search box, a **category tree** (weapons by type, armor by material and slot, gems by color,
   glyphs by class, trade goods, recipes by profession, pets, mounts...) and **filters**:
   usable only, exact match, level range, and rarity checkboxes.
+- **Stat filters**: tick Agility, Crit, Spell Power, Defense, Sockets and so on in the Filters
+  dropdown to see only gear that has **all** of them. The server checks the item's own stats,
+  heirloom scaling, "Equip:" bonuses (older items give hit, crit, attack power or spell damage
+  that way) and the random enchantment on each copy, so "of the Monkey" items match Agility and
+  Stamina. Opening a result lists only the copies that match.
 - Results are **grouped by item**, like retail: one row per item with the lowest price, item
   level and how many are available. Sort by any column. No pages.
 - **Favorites**: right-click a result, or click the star on an item. The window opens on your
@@ -59,8 +64,8 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 
 The window uses [DragonUI](https://github.com/NeticSoul/DragonUI)'s retail art when DragonUI is
 loaded, and a dark retail-style look of its own otherwise. Drag it by the title bar; it stays
-where you put it. A **Classic** button (and
-`/rah classic`) opens the old window, and with it Auctionator, for players who want it.
+where you put it. `/rah classic` opens the old window, and with it Auctionator, for players who
+want it.
 
 ## How it works
 
@@ -135,7 +140,8 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 
 ## Commands
 
-- `/rah classic` makes the old window open at the auctioneer; `/rah retail` switches back.
+- `/rah classic` switches to the old window (right away if you're at the auctioneer) and keeps
+  it as the default; `/rah retail` switches back.
 - `/rah reset` moves the window back to its default spot.
 - In the Buy tab, click the selected category again to clear it and search every category.
 
