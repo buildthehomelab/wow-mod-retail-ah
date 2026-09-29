@@ -20,6 +20,8 @@ local state = {
 	detailReq = nil,
 	quote = nil,      -- { quantity, found, total }
 	selectedAuction = nil,
+	tally = { count = 0, spent = 0 },  -- bought since this item was opened
+	pickNext = false,  -- select the cheapest buyable listing when the list comes back
 }
 
 -----------------------------------------
@@ -189,9 +191,12 @@ categoryScroll:SetPoint("BOTTOMRIGHT", categoryPane, "BOTTOMRIGHT", -24, 4)
 local categoryButtons = {}
 local refreshCategories
 
+-- Clicking the selected category again clears it (and folds it), so a name search covers
+-- every category again.
 local function selectNode(n, depth)
-	if state.node == n and n.children then
-		expanded[n] = not expanded[n]
+	if state.node == n then
+		state.node = nil
+		expanded[n] = nil
 	else
 		if depth == 0 then
 			for _, other in ipairs(RAH.CATEGORIES) do if other ~= n then expanded[other] = nil end end
@@ -238,6 +243,14 @@ for i = 1, CATEGORY_ROWS do
 	btn.text:SetJustifyH("LEFT")
 	btn.text:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
 	btn:SetScript("OnClick", function (self) if self.entry then selectNode(self.entry.node, self.entry.depth) end end)
+	btn:SetScript("OnEnter", function (self)
+		if self.entry and state.node == self.entry.node then
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:AddLine("Click again to search all categories.", 1, 1, 1)
+			GameTooltip:Show()
+		end
+	end)
+	btn:SetScript("OnLeave", function () GameTooltip:Hide() end)
 	categoryButtons[i] = btn
 end
 
@@ -361,7 +374,11 @@ local function showResults(rows, truncated, emptyText)
 	elseif state.lastQuery == "favorites" then
 		resultCount:SetText(#rows .. " favorites")
 	else
-		resultCount:SetText(#rows == 1 and "1 item" or (#rows .. " items"))
+		local text = #rows == 1 and "1 item" or (#rows .. " items")
+		if state.node then
+			text = text .. " in |cffffd200" .. state.node.name .. "|r"
+		end
+		resultCount:SetText(text)
 	end
 end
 
@@ -476,6 +493,26 @@ detailFav:SetScript("OnLeave", function () GameTooltip:Hide() end)
 
 local refresh = RAH.CreateButton(detail, REFRESH or "Refresh", 80, 22)
 refresh:SetPoint("TOPRIGHT", detail, "TOPRIGHT", -8, -8)
+
+-- What has been bought since the item was opened, so buying in a row keeps count.
+local tallyLabel = detail:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+tallyLabel:SetPoint("TOPRIGHT", refresh, "BOTTOMRIGHT", 0, -6)
+tallyLabel:SetJustifyH("RIGHT")
+
+local function updateTally()
+	local t = state.tally
+	if t.count > 0 then
+		tallyLabel:SetText("Purchased: |cffffffff" .. RAH.Number(t.count) .. "|r for " .. RAH.Money(t.spent))
+	else
+		tallyLabel:SetText("")
+	end
+end
+
+local function addToTally(count, spent)
+	state.tally.count = state.tally.count + count
+	state.tally.spent = state.tally.spent + spent
+	updateTally()
+end
 
 local function updateDetailHeader()
 	local g = state.detail
@@ -618,7 +655,9 @@ buyNow:SetScript("OnClick", function ()
 			if status == "ok" then
 				RAH.Status("Bought " .. RAH.Number(bought) .. " for " .. RAH.Money(spent) .. ". It's in your mailbox.")
 				PlaySound("LOOTWINDOWCOINSOUND")
+				addToTally(bought, spent)
 			elseif status == "partial" then
+				addToTally(bought, spent)
 				RAH.Status("Bought " .. RAH.Number(bought) .. " of " .. RAH.Number(q.quantity) .. " for " .. RAH.Money(spent) .. ".", true)
 			elseif status == "price" then
 				RAH.Status("Prices changed: that now costs " .. RAH.Money(tonumber(result[5]) or 0) .. ". Check and buy again.", true)
@@ -699,6 +738,31 @@ local bidButton = RAH.CreateButton(itemView, "Bid", 100, 24)
 bidButton:SetPoint("LEFT", bidInput, "RIGHT", 16, 0)
 local buyoutButton = RAH.CreateButton(itemView, "Buy Now", 120, 24)
 buyoutButton:SetPoint("BOTTOMRIGHT", itemView, "BOTTOMRIGHT", -12, 10)
+buyoutButton:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:AddLine("Buy the selected listing")
+	GameTooltip:AddLine("The next cheapest one is picked for you afterwards. Shift-click to buy without the confirmation.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+buyoutButton:SetScript("OnLeave", function () GameTooltip:Hide() end)
+
+-- The price Buy Now will pay, beside it.
+local buyoutPrice = itemView:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+buyoutPrice:SetPoint("RIGHT", buyoutButton, "LEFT", -10, 0)
+buyoutPrice:SetJustifyH("RIGHT")
+
+local function canBuyOut(a)
+	return bit.band(a.flags, RAH.AUCTION_OWN) == 0 and a.buyout > 0
+end
+
+-- Cheapest listing the player can buy out, per unit.
+local function cheapestBuyable(list)
+	local best
+	for _, a in ipairs(list) do
+		if canBuyOut(a) and (not best or a.buyout / a.count < best.buyout / best.count) then best = a end
+	end
+	return best
+end
 
 function Buy.UpdateAuctionButtons()
 	local a = state.selectedAuction
@@ -708,19 +772,30 @@ function Buy.UpdateAuctionButtons()
 	RAH.SetEnabled(bidButton, canBid and GetMoney() >= a.minBid)
 	RAH.SetEnabled(buyoutButton, canBuy and GetMoney() >= a.buyout)
 	if a then bidInput:SetCopper(a.minBid) end
+	if canBuy then
+		local text = RAH.Money(a.buyout)
+		if a.count > 1 then text = "|cffffffff" .. a.count .. " x|r " .. text end
+		if GetMoney() < a.buyout then text = "|cffff2020" .. text .. "|r" end
+		buyoutPrice:SetText(text)
+	else
+		buyoutPrice:SetText("")
+	end
 	auctions:Refresh()
 end
 
-local function placeBid(a, price, verb)
+local function placeBid(a, price, verb, skipConfirm)
 	local info = RAH.Item(a.link)
 	local text = string.format("%s %s for %s?", verb, info and info.link or "this item", RAH.Money(price))
-	RAH.Confirm(text, function ()
+	local function go()
+		RAH.SetEnabled(buyoutButton, false)
 		RAH.QuietChat(3)
 		RAH.Request("P", { a.id, price }, function (result, err)
 			local status = result and result[1]
 			if status == "bought" then
 				RAH.Status("Bought " .. (info and info.link or "the item") .. ". It's in your mailbox.")
 				PlaySound("LOOTWINDOWCOINSOUND")
+				addToTally(a.count, price)
+				state.pickNext = true
 			elseif status == "bid" then
 				RAH.Status("Bid placed. You'll get a mail if you're outbid.")
 			elseif status == "gone" then
@@ -728,10 +803,12 @@ local function placeBid(a, price, verb)
 			else
 				RAH.Status("That didn't go through.", true)
 			end
+			if status == "gone" then state.pickNext = true end
 			state.selectedAuction = nil
 			loadDetail()
 		end)
-	end)
+	end
+	if skipConfirm then go() else RAH.Confirm(text, go) end
 end
 
 bidButton:SetScript("OnClick", function ()
@@ -750,7 +827,7 @@ bidButton:SetScript("OnClick", function ()
 end)
 buyoutButton:SetScript("OnClick", function ()
 	local a = state.selectedAuction
-	if a then placeBid(a, a.buyout, "Buy") end
+	if a then placeBid(a, a.buyout, "Buy", IsShiftKeyDown()) end
 end)
 
 -----------------------------------------
@@ -787,6 +864,10 @@ function loadDetail()
 				if a.id == selectedId then state.selectedAuction = a end
 				table.insert(list, a)
 			end
+			if state.pickNext then
+				state.pickNext = false
+				state.selectedAuction = cheapestBuyable(list)
+			end
 			auctions:SetItems(list, true)
 			Buy.UpdateAuctionButtons()
 		end)
@@ -797,6 +878,9 @@ function Buy.OpenDetail(g)
 	state.detail = g
 	state.quote = nil
 	state.selectedAuction = nil
+	state.tally = { count = 0, spent = 0 }
+	state.pickNext = true
+	updateTally()
 	local commodityItem = bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0
 	if commodityItem then
 		commodity:Show(); itemView:Hide()

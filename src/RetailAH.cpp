@@ -58,6 +58,7 @@ namespace RetailAH
         sConfig.maxResults = std::max<uint32>(50, sConfigMgr->GetOption<uint32>("RetailAH.MaxResults", 500));
         sConfig.maxDetailRows = std::max<uint32>(50, sConfigMgr->GetOption<uint32>("RetailAH.MaxDetailRows", 300));
         sConfig.searchCooldownMs = sConfigMgr->GetOption<uint32>("RetailAH.SearchCooldownMs", 250);
+        sConfig.reagentBank = sConfigMgr->GetOption<bool>("RetailAH.ReagentBank", true);
     }
 
     void Send(Player* player, std::string const& payload)
@@ -195,8 +196,10 @@ namespace RetailAH
 
             sSessions[player->GetGUID().GetCounter()].auctioneer = guid;
 
+            uint32 flags = ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0;
             Send(player, "HELLO:" + req + ":" + std::to_string(PROTOCOL_VERSION) + ":"
-                + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent));
+                + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent)
+                + ":" + std::to_string(flags));
         }
 
         bool TakeToken(SessionState& state)
@@ -286,6 +289,8 @@ namespace RetailAH
                 HandlePostCommodity(ctx, args);
             else if (command == "PI")
                 HandlePostItem(ctx, args);
+            else if (command == "RB")
+                ReagentBank::HandleContents(ctx);
             else
                 SendError(ctx, "unknown");
         }
@@ -343,11 +348,16 @@ public:
 class RetailAHWorldScript : public WorldScript
 {
 public:
-    RetailAHWorldScript() : WorldScript("RetailAHWorldScript", { WORLDHOOK_ON_AFTER_CONFIG_LOAD }) { }
+    RetailAHWorldScript() : WorldScript("RetailAHWorldScript", { WORLDHOOK_ON_AFTER_CONFIG_LOAD, WORLDHOOK_ON_STARTUP }) { }
 
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         LoadConfig();
+    }
+
+    void OnStartup() override
+    {
+        ReagentBank::CheckTable();
     }
 };
 

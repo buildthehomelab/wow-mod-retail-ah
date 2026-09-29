@@ -104,6 +104,7 @@ function SetPortraitTexture() end
 function OpenAllBags() end
 function IsAddOnLoaded() return false end
 function IsModifiedClick() return false end
+function IsShiftKeyDown() return false end
 function CursorHasItem() return false end
 function GetCursorInfo() return nil end
 function ClearCursor() end
@@ -164,7 +165,7 @@ WorldFrame = newObject("Frame", "WorldFrame")
 GameTooltip = newObject("GameTooltip", "GameTooltip")
 DEFAULT_CHAT_FRAME = { AddMessage = function (_, m) print("  [chat] " .. m) end }
 GameFontHighlightSmall, GameFontNormalSmall = {}, {}
-UIPanelWindows, StaticPopupDialogs, SlashCmdList = {}, {}, {}
+UIPanelWindows, StaticPopupDialogs, SlashCmdList, UISpecialFrames = {}, {}, {}, {}
 
 -- Outgoing messages go to a fake server that answers like mod-retail-ah.
 local outbox = {}
@@ -194,7 +195,7 @@ local function serve(msg)
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
-	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15")
+	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:1")
 	elseif cmd == "S" or cmd == "F" then
 		reply("SR:" .. req .. ":2:0")
 		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,0")
@@ -205,9 +206,12 @@ local function serve(msg)
 		reply("IR:" .. req .. ":15210"); reply("ID:" .. req .. ":101,1,3000,3150,45000,7200,4,-7,55;102,1,0,5000,0,600,1,0,0"); reply("IE:" .. req)
 	elseif cmd == "Q" then reply("QR:" .. req .. ":2589:5:50:0")
 	elseif cmd == "B" then reply("BR:" .. req .. ":ok:5:50:5:50")
-	elseif cmd == "P" then reply("PR:" .. req .. ":bid")
+	elseif cmd == "P" then
+		local id, price = msg:match("^P:[^:]*:(%d+):(%d+)")
+		reply("PR:" .. req .. ":" .. ((id == "101" and price == "45000") and "bought" or "bid"))
 	elseif cmd == "X" then reply("XR:" .. req .. ":ok")
-	elseif cmd == "D" then reply("DR:" .. req .. ":60:27:20")
+	elseif cmd == "D" then reply("DR:" .. req .. ":60:77:20:50")
+	elseif cmd == "RB" then reply("RR:" .. req); reply("RD:" .. req .. ":2589,50;2447,30"); reply("RE:" .. req)
 	elseif cmd == "PC" or cmd == "PI" then reply("POR:" .. req .. ":2:2:ok")
 	elseif cmd == "O" then reply("OR:" .. req); reply("OD:" .. req .. ":201,2589,20,0,300,86000,5,0,0"); reply("OE:" .. req)
 	elseif cmd == "BL" then reply("LR:" .. req); reply("LD:" .. req .. ":101,15210,1,3000,3150,45000,7200,-7,55"); reply("LE:" .. req)
@@ -268,6 +272,29 @@ step("buy now", function ()
 	lastPopup.data()
 end)
 step("open gear", function () RAH.Buy.OpenDetail({ entry = 15210, price = 45000, units = 2, auctions = 2, flags = 0 }) end)
+local function findText(pattern)
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "FontString" and f.__text:find(pattern) then return f.__text end
+	end
+end
+step("cheapest listing preselected, buy it", function ()
+	local price = findText("45,000") or findText("4g 50s") or findText("GoldIcon")
+	assert(price, "no buyout price shown beside Buy Now")
+	print("  price shown: " .. price)
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "Button" and f.__text == "Buy Now" and f.__enabled and f.__scripts.OnEnter then
+			f.__scripts.OnClick(f)
+		end
+	end
+	assert(lastPopup, "no confirm")
+	print("  confirm: " .. lastPopup.text)
+	lastPopup.data()
+end)
+step("tally shows the purchase", function ()
+	local tally = findText("^Purchased:")
+	assert(tally, "no tally")
+	print("  " .. tally)
+end)
 step("favorites", function () RAH.SetFavorite(2589, true); RAH.Buy.ShowFavorites() end)
 step("sell tab", function () RAH.SelectTab(2) end)
 step("select commodity", function () RAH.Sell.Select(0, 1) end)
@@ -277,6 +304,16 @@ step("post", function ()
 			print("  post enabled: " .. tostring(f.__enabled))
 			f.__scripts.OnClick(f)
 		end
+	end
+end)
+step("reagent bank flag", function () assert(RAH.reagentBank, "HELLO flag not read") end)
+step("select bank-only commodity", function ()
+	RAH.Sell.SelectGroup({ identity = "c2447", bag = 255, slot = 2447, entry = 2447, link = "item:2447", name = "Peacebloom",
+		texture = "x", quality = 1, commodity = true, count = 0, bank = 30, sellPrice = 4 })
+end)
+step("post bank-only", function ()
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "Button" and f.__text == "Post" then f.__scripts.OnClick(f) end
 	end
 end)
 step("select gear", function () RAH.Sell.Select(0, 3) end)

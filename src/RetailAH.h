@@ -18,6 +18,7 @@
 #define MOD_RETAIL_AH_H
 
 #include "Define.h"
+#include "DatabaseEnvFwd.h"
 #include "ObjectGuid.h"
 #include <string>
 #include <string_view>
@@ -49,7 +50,18 @@ namespace RetailAH
         uint32 maxResults = 500;
         uint32 maxDetailRows = 300;
         uint32 searchCooldownMs = 250;
+        bool reagentBank = true;
     };
+
+    // Capability bits in the HELLO answer, so a newer addon can tell what this server offers.
+    enum HelloFlags : uint32
+    {
+        HELLO_REAGENT_BANK = 0x1,
+    };
+
+    // In place of a bag number: the "slot" field is an item entry, and the units may come from
+    // the reagent bank as well as the bags. Commodities only.
+    constexpr uint32 BAG_BY_ENTRY = 255;
 
     Config& GetConfig();
     void LoadConfig();
@@ -120,6 +132,19 @@ namespace RetailAH
 
     // Called from the AuctionHouseScript: records auctions the core creates while a post runs.
     void OnAuctionAdded(AuctionEntry const* auction);
+
+    // ---- RetailAHReagentBank.cpp: mod-reagent-bank-account as a source of commodities ---------
+
+    namespace ReagentBank
+    {
+        void CheckTable();
+        bool Enabled();
+        uint32 Stored(Player const* player, uint32 entry);
+        std::vector<std::pair<uint32, uint32>> Contents(Player const* player);
+        void Take(Player const* player, uint32 entry, uint32 count, CharacterDatabaseTransaction trans);
+        void NotifyChanged(Player* player);
+        void HandleContents(Context& ctx);
+    }
 }
 
 #endif

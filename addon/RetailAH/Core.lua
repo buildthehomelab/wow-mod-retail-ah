@@ -229,7 +229,7 @@ local HEAVY_GAP = 0.3
 local heavyQueue = {}
 local lastHeavy = 0
 
-local LISTS = { S = true, C = true, I = true, O = true, L = true }
+local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true }
 
 local function send(msg)
 	SendAddonMessage(RAH.PREFIX, msg, "WHISPER", UnitName("player"))
@@ -361,7 +361,7 @@ local switchingToClassic = false
 
 local function showClassic()
 	switchingToClassic = true
-	if RetailAHFrame and RetailAHFrame:IsShown() then HideUIPanel(RetailAHFrame) end
+	if RetailAHFrame and RetailAHFrame:IsShown() then RetailAHFrame:Hide() end
 	switchingToClassic = false
 	RAH.active = false
 	AuctionFrame_LoadUI()
@@ -385,6 +385,8 @@ function RAH.OnHello(fields)
 	RAH.serverReady = true
 	RAH.cutPercent = tonumber(fields[2]) or 5
 	RAH.depositPercent = tonumber(fields[3]) or 15
+	-- Capability flags; an older server sends none.
+	RAH.reagentBank = bit.band(tonumber(fields[4]) or 0, 1) ~= 0
 	RAH.Fire("READY")
 end
 
@@ -404,12 +406,7 @@ local function onAuctionHouseShow()
 	RAH.active = true
 	RAH.serverReady = false
 	RAH.auctioneer = UnitGUID("npc")
-	ShowUIPanel(RetailAHFrame)
-	if not RetailAHFrame:IsShown() then
-		-- Another panel refused to give way; don't strand the player without a window.
-		showClassic()
-		return
-	end
+	RetailAHFrame:Show()
 
 	helloTimer = helloTimer + 1
 	local myTimer = helloTimer
@@ -432,7 +429,7 @@ local function onAuctionHouseClosed()
 	helloTimer = helloTimer + 1
 	RAH.active = false
 	RAH.serverReady = false
-	if RetailAHFrame and RetailAHFrame:IsShown() then HideUIPanel(RetailAHFrame) end
+	if RetailAHFrame and RetailAHFrame:IsShown() then RetailAHFrame:Hide() end
 	StaticPopup_Hide("RETAILAH_CONFIRM")
 	RAH.Fire("CLOSED")
 end
@@ -496,8 +493,11 @@ SlashCmdList.RETAILAH = function (msg)
 	elseif msg == "retail" then
 		RetailAHDB.classic = nil
 		RAH.Print("the retail window opens from now on.")
+	elseif msg == "reset" then
+		RAH.ResetPosition()
+		RAH.Print("window position reset.")
 	else
 		RAH.Print("|cffffd200/rah classic|r or |cffffd200/rah retail|r picks which window opens at the auctioneer. "
-			.. "The Classic button in the retail window switches for one visit.")
+			.. "The Classic button in the retail window switches for one visit. |cffffd200/rah reset|r moves the window back.")
 	end
 end
