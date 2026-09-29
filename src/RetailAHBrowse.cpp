@@ -4,7 +4,7 @@
  *   S   search              -> SR:<req>:<groups>:<truncated>, SD rows, SE
  *   F   favorites lookup    -> the same answer as a search, one group per asked entry
  *   C   commodity tiers     -> CR:<req>:<entry>, CD rows, CE
- *   I   one item's auctions -> IR:<req>:<entry>, ID rows, IE
+ *   I   one item's auctions -> IR:<req>:<entry>:<look state>, ID rows, IE
  *   O   own auctions        -> OR, OD rows, OE
  *   BL  auctions bid on     -> LR, LD rows, LE
  *
@@ -67,12 +67,14 @@ namespace RetailAH
             GROUP_COMMODITY = 0x1,
             GROUP_BID_ONLY  = 0x2,  // nothing has a buyout; the price is the cheapest bid
             GROUP_OWN       = 0x4,
+            GROUP_UNCOLLECTED = 0x8,  // a mod-transmog-plus look the account doesn't have
         };
 
         enum SearchFlags : uint32
         {
             SEARCH_USABLE = 0x1,
             SEARCH_EXACT  = 0x2,
+            SEARCH_UNCOLLECTED = 0x4,  // only appearances the account hasn't collected
         };
 
         enum AuctionFlags : uint32
@@ -164,6 +166,8 @@ namespace RetailAH
                 return false;
             if ((filter.flags & SEARCH_USABLE) && player->CanUseItem(proto) != EQUIP_ERR_OK)
                 return false;
+            if ((filter.flags & SEARCH_UNCOLLECTED) && Appearances::State(player, proto) != Appearances::Look::Uncollected)
+                return false;
             return true;
         }
 
@@ -229,13 +233,15 @@ namespace RetailAH
             }
         }
 
-        std::string GroupRow(Group const& group)
+        std::string GroupRow(Group const& group, Player const* player)
         {
             uint32 flags = 0;
             if (IsCommodity(group.proto))
                 flags |= GROUP_COMMODITY;
             if (group.own)
                 flags |= GROUP_OWN;
+            if (Appearances::State(player, group.proto) == Appearances::Look::Uncollected)
+                flags |= GROUP_UNCOLLECTED;
 
             uint64 price = group.minPrice;
             if (!price && group.auctions)
@@ -253,7 +259,7 @@ namespace RetailAH
             std::vector<std::string> rows;
             rows.reserve(groups.size());
             for (Group const* group : groups)
-                rows.push_back(GroupRow(*group));
+                rows.push_back(GroupRow(*group, ctx.player));
 
             Send(ctx.player, "SR:" + ctx.req + ":" + std::to_string(rows.size()) + ":" + (truncated ? "1" : "0"));
             SendRows(ctx.player, "SD:" + ctx.req, rows);
@@ -491,7 +497,9 @@ namespace RetailAH
                 + std::to_string(flags) + "," + ItemIdentity(sAuctionMgr->GetAItem(auction->item_guid)));
         }
 
-        SendList(ctx, "I", std::to_string(entry), rows);
+        // Meta: entry and the look's state (0 not an appearance, 1 collected, 2 not collected).
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+        SendList(ctx, "I", std::to_string(entry) + ":" + std::to_string(uint32(Appearances::State(ctx.player, proto))), rows);
     }
 
     // O:<req>   Rows: <id>,<entry>,<count>,<current bid>,<buyout>,<seconds left>,<flags>,<rp>,<sf>

@@ -51,12 +51,14 @@ namespace RetailAH
         uint32 maxDetailRows = 300;
         uint32 searchCooldownMs = 250;
         bool reagentBank = true;
+        bool transmog = true;
     };
 
     // Capability bits in the HELLO answer, so a newer addon can tell what this server offers.
     enum HelloFlags : uint32
     {
         HELLO_REAGENT_BANK = 0x1,
+        HELLO_APPEARANCES  = 0x2,  // mod-transmog-plus collections: marker and filter
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -144,6 +146,26 @@ namespace RetailAH
         void Take(Player const* player, uint32 entry, uint32 count, CharacterDatabaseTransaction trans);
         void NotifyChanged(Player* player);
         void HandleContents(Context& ctx);
+    }
+
+    // ---- RetailAHTransmog.cpp: mod-transmog-plus appearance collections -----------------------
+
+    namespace Appearances
+    {
+        enum class Look : uint8
+        {
+            NotAnAppearance = 0,
+            Collected       = 1,
+            Uncollected     = 2,
+        };
+
+        void CheckTable();
+        void LoadOptions();
+        bool Enabled();
+        bool IsAppearance(ItemTemplate const* proto);
+        Look State(Player const* player, ItemTemplate const* proto);
+        // Drops the cached looks so the next question reads them fresh.
+        void Forget(uint32 accountId);
     }
 }
 

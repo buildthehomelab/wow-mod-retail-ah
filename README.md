@@ -26,6 +26,11 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   beside **Buy Now**; after each purchase the next cheapest is picked, so you can keep buying
   (Shift-click skips the confirmation).
 - The item view keeps a running **Purchased: N for X** total while you stay on the item.
+- **Transmog** (with [mod-transmog-plus](https://github.com/buildthehomelab/wow-mod-transmog-plus)):
+  gear whose look your account hasn't collected is tagged **new look** in the results and the
+  item view, with "You haven't collected this appearance" in the tooltip, and the filters have
+  **Uncollected appearances only**, like retail. A look counts as collected from any item that
+  shares it, the same way transmog-plus counts it.
 - Everything you buy arrives in your mailbox, as it always has.
 
 **Sell**
@@ -66,6 +71,10 @@ On the server:
 - **Buying a whole auction, bidding, cancelling and posting** are handed to the core's own
   auction handlers, as if the stock window had sent them. Deposits, the house cut, mails,
   achievements, GM logging and every other module's hooks behave exactly as before.
+- **Transmog collections** are read from mod-transmog-plus's `mod_transmog_plus_appearances`
+  table when the player opens the auction house (and at most once a minute after that), and
+  what counts as an appearance follows transmog-plus's own rules and `Transmog.Allow*` options.
+  The two modules don't link to each other; either builds without the other.
 - **Posting from the reagent bank** is done by the module: the reagent bank stores amounts, not
   items, so there is nothing for the core's sell handler to take. The module finds the player's
   bank row the way mod-reagent-bank-account does (account-wide or per character, shared banks
@@ -113,6 +122,7 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 | `RetailAH.MaxDetailRows` | 300 | Most price tiers or listings shown for one item. |
 | `RetailAH.SearchCooldownMs` | 250 | Shortest time between two searches from one player. |
 | `RetailAH.ReagentBank` | 1 | Post commodities from mod-reagent-bank-account's reagent bank too. |
+| `RetailAH.Transmog` | 1 | Mark and filter mod-transmog-plus appearances the account hasn't collected. |
 
 ## Commands
 
@@ -122,8 +132,8 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 
 ## Not included
 
-- Retail's "uncollected appearances" and "upgrades" filters, the WoW Token and region-wide
-  commodity markets have no 3.3.5a equivalent here.
+- Retail's "upgrades" filter, the WoW Token and region-wide commodity markets have no 3.3.5a
+  equivalent here.
 - Commodity listings without a buyout (from the old window or a bot) show in search but can't
   be bought through the quantity box, since retail commodities are buyout only. They can still
   be bid on from the classic window.

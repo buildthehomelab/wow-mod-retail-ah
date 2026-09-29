@@ -11,6 +11,7 @@ RAH.PROTOCOL = 1
 RAH.GROUP_COMMODITY = 1
 RAH.GROUP_BID_ONLY = 2
 RAH.GROUP_OWN = 4
+RAH.GROUP_UNCOLLECTED = 8  -- a mod-transmog-plus appearance the account hasn't collected
 RAH.AUCTION_OWN = 1
 RAH.AUCTION_HIGH_BIDDER = 2
 RAH.AUCTION_HAS_BID = 4
@@ -387,6 +388,7 @@ function RAH.OnHello(fields)
 	RAH.depositPercent = tonumber(fields[3]) or 15
 	-- Capability flags; an older server sends none.
 	RAH.reagentBank = bit.band(tonumber(fields[4]) or 0, 1) ~= 0
+	RAH.appearances = bit.band(tonumber(fields[4]) or 0, 2) ~= 0
 	RAH.Fire("READY")
 end
 

@@ -59,6 +59,8 @@ namespace RetailAH
         sConfig.maxDetailRows = std::max<uint32>(50, sConfigMgr->GetOption<uint32>("RetailAH.MaxDetailRows", 300));
         sConfig.searchCooldownMs = sConfigMgr->GetOption<uint32>("RetailAH.SearchCooldownMs", 250);
         sConfig.reagentBank = sConfigMgr->GetOption<bool>("RetailAH.ReagentBank", true);
+        sConfig.transmog = sConfigMgr->GetOption<bool>("RetailAH.Transmog", true);
+        Appearances::LoadOptions();
     }
 
     void Send(Player* player, std::string const& payload)
@@ -196,7 +198,10 @@ namespace RetailAH
 
             sSessions[player->GetGUID().GetCounter()].auctioneer = guid;
 
-            uint32 flags = ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0;
+            // A new visit reads the transmog collection fresh.
+            Appearances::Forget(player->GetSession()->GetAccountId());
+
+            uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0);
             Send(player, "HELLO:" + req + ":" + std::to_string(PROTOCOL_VERSION) + ":"
                 + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent)
                 + ":" + std::to_string(flags));
@@ -331,6 +336,7 @@ public:
     void OnPlayerLogout(Player* player) override
     {
         sSessions.erase(player->GetGUID().GetCounter());
+        Appearances::Forget(player->GetSession()->GetAccountId());
     }
 };
 
@@ -358,6 +364,7 @@ public:
     void OnStartup() override
     {
         ReagentBank::CheckTable();
+        Appearances::CheckTable();
     }
 };
 
