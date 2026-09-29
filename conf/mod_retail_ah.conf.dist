@@ -1,0 +1,44 @@
+[worldserver]
+
+########################################
+# mod-retail-ah
+#
+# Server half of the retail-style auction house. Players with the RetailAH addon get the
+# Buy / Sell / Auctions window; everyone shares the same auctions as the stock window, AH bots
+# and other modules.
+########################################
+
+#
+#    RetailAH.Enable
+#        Description: Master switch. With 0 the addon falls back to the stock auction window.
+#        Default:     1
+#
+
+RetailAH.Enable = 1
+
+#
+#    RetailAH.MaxResults
+#        Description: Most item groups one search returns. A search that finds more is cut off
+#                     alphabetically and the window says so. Minimum 50.
+#        Default:     500
+#
+
+RetailAH.MaxResults = 500
+
+#
+#    RetailAH.MaxDetailRows
+#        Description: Most rows sent when a player opens one item: price tiers for a commodity,
+#                     auctions for anything else. Minimum 50.
+#        Default:     300
+#
+
+RetailAH.MaxDetailRows = 300
+
+#
+#    RetailAH.SearchCooldownMs
+#        Description: Shortest time between two searches from one player, in milliseconds.
+#                     Each search walks the whole auction house.
+#        Default:     250
+#
+
+RetailAH.SearchCooldownMs = 250

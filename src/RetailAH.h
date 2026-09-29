@@ -1,0 +1,125 @@
+/*
+ * mod-retail-ah
+ *
+ * Server half of a retail-style auction house. The RetailAH addon replaces the Blizzard auction
+ * window and talks to this module through addon whispers; the module answers with results the
+ * 3.3.5a protocol can't express (auctions grouped by item, commodity price tiers, quotes for any
+ * quantity) and carries out purchases, posts and cancellations.
+ *
+ * Every trade that maps onto a stock auction action is handed to the core's own opcode handler,
+ * so deposits, the house cut, mails, achievements, logging and other modules' hooks behave
+ * exactly as they do for the old window. The only new trade is buying part of a stack, which
+ * splits the auction in two and buys out the piece.
+ *
+ * Released under the MIT License.
+ */
+
+#ifndef MOD_RETAIL_AH_H
+#define MOD_RETAIL_AH_H
+
+#include "Define.h"
+#include "ObjectGuid.h"
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+class AuctionHouseObject;
+class Creature;
+class Item;
+class Player;
+struct AuctionEntry;
+struct AuctionHouseEntry;
+struct ItemTemplate;
+
+namespace RetailAH
+{
+    // Addon message prefix; the client sends "RAH\t<command>" as a whisper to itself.
+    constexpr char const* PREFIX = "RAH";
+
+    // Bumped when a message changes shape. The addon refuses to run against another version.
+    constexpr uint32 PROTOCOL_VERSION = 1;
+
+    // Leaves room for the prefix and tab inside the client's 255-byte chat message limit.
+    constexpr std::size_t MAX_PAYLOAD = 240;
+
+    struct Config
+    {
+        bool enabled = true;
+        uint32 maxResults = 500;
+        uint32 maxDetailRows = 300;
+        uint32 searchCooldownMs = 250;
+    };
+
+    Config& GetConfig();
+    void LoadConfig();
+
+    // A validated request: the player is standing at an auctioneer, and this is its house.
+    struct Context
+    {
+        Player* player = nullptr;
+        Creature* auctioneer = nullptr;
+        AuctionHouseObject* house = nullptr;
+        AuctionHouseEntry const* houseEntry = nullptr;
+        std::string req;  // echoed back so the addon can match answers to requests
+    };
+
+    // ---- RetailAH.cpp: transport -------------------------------------------------------------
+
+    void Send(Player* player, std::string const& payload);
+
+    // Sends "<header>:<row>;<row>;..." in as many messages as it takes, never splitting a row.
+    void SendRows(Player* player, std::string const& header, std::vector<std::string> const& rows);
+
+    void SendError(Context const& ctx, std::string_view what);
+
+    bool ParseUInt(std::string_view text, uint32& out);
+    bool ParseInt(std::string_view text, int32& out);
+    std::vector<std::string_view> Split(std::string_view text, char sep, std::size_t maxParts = 0);
+
+    // ---- RetailAHBrowse.cpp: read-only requests ----------------------------------------------
+
+    // The auctioneer's mod-ah-progression style gate (or any other module's): can this player
+    // see and bid on the auction? Asked once per item entry per request.
+    class VisibilityCache
+    {
+    public:
+        explicit VisibilityCache(Player* player) : _player(player) { }
+        bool Visible(AuctionEntry* auction);
+
+    private:
+        Player* _player;
+        std::unordered_map<uint32, bool> _seen;
+    };
+
+    bool IsCommodity(ItemTemplate const* proto);
+
+    // Seconds left on an auction, never negative.
+    uint32 TimeLeft(AuctionEntry const* auction);
+
+    // True if the auction belongs to the player or to another character on the same account;
+    // the core refuses bids on both.
+    bool IsOwnAuction(Player* player, AuctionEntry const* auction);
+
+    void HandleSearch(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleFavorites(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleCommodityDetails(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleItemDetails(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleOwned(Context& ctx);
+    void HandleBids(Context& ctx);
+
+    // ---- RetailAHTrade.cpp: requests that change something -----------------------------------
+
+    void HandleQuote(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleCommodityBuy(Context& ctx, std::vector<std::string_view> const& args);
+    void HandlePlaceBid(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleCancel(Context& ctx, std::vector<std::string_view> const& args);
+    void HandleDeposit(Context& ctx, std::vector<std::string_view> const& args);
+    void HandlePostCommodity(Context& ctx, std::vector<std::string_view> const& args);
+    void HandlePostItem(Context& ctx, std::vector<std::string_view> const& args);
+
+    // Called from the AuctionHouseScript: records auctions the core creates while a post runs.
+    void OnAuctionAdded(AuctionEntry const* auction);
+}
+
+#endif
