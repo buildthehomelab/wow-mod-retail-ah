@@ -211,9 +211,10 @@ local function serve(msg)
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
-	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:63:12345")
+	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:127:12345:3:22:455679")
 	elseif cmd == "S" or cmd == "F" then
-		reply("SR:" .. req .. ":2:0")
+		-- 3 matches hidden by level (soonest at 24), 2 by era (soonest after Molten Core).
+		reply("SR:" .. req .. ":2:0" .. (cmd == "S" and ":3,24,2,1" or ""))
 		-- 15210 is one suffix of a random-enchant item (flags 8 + 16, suffix -7, factor 55).
 		reply("SD:" .. req .. ":2589,13,47,3,5;15210,45000,2,2,24,-7,55")
 		reply("SE:" .. req)
@@ -345,6 +346,20 @@ step("stat filters: the mask rides on the flags field, and on opening a result",
 	assert(RetailAHDB.filters.stats == nil, "stat mask not cleared")
 end)
 step("search", function () RAH.Buy.Search() end)
+step("progression gates: locked note, era stats, level hint", function ()
+	assert(RAH.era == 3 and RAH.levelCap == 22, "gate fields not read: " .. tostring(RAH.era) .. " " .. tostring(RAH.levelCap))
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("+5 locked", 1, true) end),
+		"result count has no locked note")
+	local function check(label)
+		return find(function (f) local l = rawget(f, "label") return type(l) == "table" and l.__text == label end)
+	end
+	local filterButton = find(function (f) return f.__kind == "Button" and f.__text:find("Filters") end)
+	filterButton.__scripts.OnClick(filterButton)
+	assert(not check("Resilience"):IsShown(), "Resilience offered before TBC")
+	assert(check("Haste"):IsShown() and check("Agility"):IsShown(), "era stats hidden")
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("up to 22", 1, true) end), "no level hint")
+	filterButton.__scripts.OnClick(filterButton)
+end)
 step("a suffix group links and opens only its suffix", function ()
 	local gear
 	for _, f in ipairs(allFrames) do
@@ -380,7 +395,7 @@ end)
 step("repeated search shows cached results at once", function ()
 	RAH.Buy.Search()
 	-- No tick yet: the server hasn't answered, but the last answer is already on screen.
-	assert(find(function (f) return f.__kind == "FontString" and f.__text == "2 items" end),
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("^2 items") end),
 		"cached results not shown before the answer")
 end)
 step("rapid searches drop the superseded ones", function ()

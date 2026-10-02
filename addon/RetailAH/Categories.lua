@@ -101,3 +101,14 @@ RAH.STATS = {
 	"Expertise", "Armor Pen.", "Defense", "Dodge", "Parry",
 	"Block", "Resilience", "Mana Regen", "Spell Pen.", "Sockets",
 }
+
+-- When a mod-individual-progression state unlocks something, for the "N more unlock" note.
+-- Keys are IP's progression states (the server's Era::State).
+RAH.ERA_UNLOCKS = {
+	[1] = "after Molten Core", [2] = "after Onyxia", [3] = "after Blackwing Lair",
+	[4] = "when the AQ gates open", [5] = "during the AQ war", [6] = "after AQ40", [7] = "after Naxxramas",
+	[8] = "in The Burning Crusade", [9] = "with SSC and Tempest Keep", [10] = "with Hyjal and Black Temple",
+	[11] = "with Zul'Aman", [12] = "with Sunwell", [13] = "in Wrath of the Lich King", [14] = "with Ulduar",
+	[15] = "with Trial of the Crusader", [16] = "with Icecrown Citadel", [17] = "with Ruby Sanctum",
+	[18] = "at the end of Wrath",
+}

@@ -40,7 +40,14 @@ namespace RetailAH
         if (itr != _seen.end())
             return itr->second;
 
-        bool visible = sScriptMgr->OnPlayerCanPlaceAuctionBid(_player, auction);
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(auction->item_template);
+        bool visible = _showOwned ? _view.VisibleOrOwned(proto) : _view.Visible(proto);
+        if (visible)
+        {
+            // Other modules' answers; ours was just given.
+            Gate::SkipBidHook skip;
+            visible = sScriptMgr->OnPlayerCanPlaceAuctionBid(_player, auction);
+        }
         _seen.emplace(auction->item_template, visible);
         return visible;
     }
@@ -271,14 +278,45 @@ namespace RetailAH
                 + std::to_string(group.randomProperty) + "," + std::to_string(group.suffixFactor);
         }
 
-        void SendGroups(Context const& ctx, std::vector<Group const*> const& groups, bool truncated)
+        // Items a search found but the gates hid, for the "N more unlock" note.
+        struct Locked
+        {
+            uint32 byLevel = 0;
+            uint32 nextLevel = 0;  // the lowest character level that shows one of them
+            uint32 byEra = 0;      // hidden by the era alone
+            uint32 nextEra = 0;    // the lowest progression state that shows one of them
+
+            // An item held back by both is counted under its era: levelling alone won't show it.
+            void Add(Gate::Lock lock)
+            {
+                if (lock.era)
+                {
+                    ++byEra;
+                    nextEra = nextEra ? std::min<uint32>(nextEra, lock.era) : lock.era;
+                }
+                else if (lock.level)
+                {
+                    ++byLevel;
+                    nextLevel = nextLevel ? std::min<uint32>(nextLevel, lock.level) : lock.level;
+                }
+            }
+
+            std::string Meta() const
+            {
+                return std::to_string(byLevel) + "," + std::to_string(nextLevel) + "," + std::to_string(byEra) + ","
+                    + std::to_string(nextEra);
+            }
+        };
+
+        void SendGroups(Context const& ctx, std::vector<Group const*> const& groups, bool truncated, Locked const* locked = nullptr)
         {
             std::vector<std::string> rows;
             rows.reserve(groups.size());
             for (Group const* group : groups)
                 rows.push_back(GroupRow(*group, ctx.player));
 
-            Send(ctx.player, "SR:" + ctx.req + ":" + std::to_string(rows.size()) + ":" + (truncated ? "1" : "0"));
+            Send(ctx.player, "SR:" + ctx.req + ":" + std::to_string(rows.size()) + ":" + (truncated ? "1" : "0")
+                + (locked ? ":" + locked->Meta() : ""));
             SendRows(ctx.player, "SD:" + ctx.req, rows);
             Send(ctx.player, "SE:" + ctx.req);
         }
@@ -301,6 +339,8 @@ namespace RetailAH
     // S:<req>:<flags>[,<stat mask>]:<minLevel>:<maxLevel>:<qualityMask>:<class>:<subclass>:<invType>:<name>
     // The stat mask rides on the flags field so the name stays last and may hold ':'. Only a
     // server that says HELLO_STAT_FILTERS gets one.
+    // Answer: SR:<req>:<groups>:<truncated>:<locked by level>,<next level>,<locked by era>,<next era>
+    // counts the items that matched but the gates hid; the levels and era are the soonest unlock.
     void HandleSearch(Context& ctx, std::vector<std::string_view> const& args)
     {
         Filter filter;
@@ -328,6 +368,7 @@ namespace RetailAH
         LocaleConstant locale = player->GetSession()->GetSessionDbLocaleIndex();
         LocaleConstant dbcLocale = player->GetSession()->GetSessionDbcLocale();
         VisibilityCache visibility(player);
+        Locked locked;
 
         // Per entry: does the template pass the filters, and do its plain name and its template
         // stats match? A random-enchant item that fails either is checked auction by auction.
@@ -343,7 +384,7 @@ namespace RetailAH
             {
                 ItemTemplate const* proto = sObjectMgr->GetItemTemplate(auction->item_template);
                 Verdict verdict { false, false, false };
-                if (proto && MatchesTemplate(filter, proto, player) && visibility.Visible(auction))
+                if (proto && MatchesTemplate(filter, proto, player))
                 {
                     verdict.passes = true;
                     verdict.nameMatches = filter.name.empty() || NameMatches(filter, ItemName(proto, locale));
@@ -351,6 +392,13 @@ namespace RetailAH
                     // A random-suffix item can still match on its suffix, auction by auction.
                     if ((!verdict.nameMatches || !verdict.statsMatch) && !HasRandomName(proto))
                         verdict.passes = false;
+                    if (verdict.passes && !visibility.Visible(auction))
+                    {
+                        // Only counted when the item itself matched, not just maybe one of its suffixes.
+                        if (verdict.nameMatches && verdict.statsMatch)
+                            locked.Add(visibility.View().Check(proto));
+                        verdict.passes = false;
+                    }
                 }
                 vItr = verdicts.emplace(auction->item_template, verdict).first;
             }
@@ -426,7 +474,7 @@ namespace RetailAH
         for (auto const& [name, group] : named)
             sorted.push_back(group);
 
-        SendGroups(ctx, sorted, truncated);
+        SendGroups(ctx, sorted, truncated, &locked);
 
         LOG_DEBUG("module", "mod-retail-ah: search by {} walked {} auctions, sent {} groups in {} ms",
             player->GetName(), ctx.house->GetAuctions().size(), sorted.size(), getMSTimeDiff(started, getMSTime()));
@@ -480,7 +528,7 @@ namespace RetailAH
 
         struct Tier { uint32 units = 0; uint32 own = 0; };
         std::map<uint64, Tier> tiers;
-        VisibilityCache visibility(ctx.player);
+        VisibilityCache visibility(ctx.player, true);
 
         for (auto const& [id, auction] : ctx.house->GetAuctions())
         {
@@ -524,7 +572,7 @@ namespace RetailAH
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
         bool perItem = proto && statMask && !HasStats(GearStats::TemplateMask(proto), statMask);
 
-        VisibilityCache visibility(ctx.player);
+        VisibilityCache visibility(ctx.player, true);
         std::vector<AuctionEntry*> auctions;
         for (auto const& [id, auction] : ctx.house->GetAuctions())
         {

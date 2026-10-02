@@ -147,18 +147,43 @@ local statChecks = {}
 for i, label in ipairs(RAH.STATS) do
 	local cb = RAH.CreateCheck(filters, label)
 	cb.bit = bit.lshift(1, i - 1)
-	if i == 1 then
-		cb:SetPoint("TOPLEFT", statsLabel, "BOTTOMLEFT", -4, -2)
-	elseif i == 11 then
-		cb:SetPoint("LEFT", statChecks[1], "RIGHT", 80, 0)
-	else
-		cb:SetPoint("TOPLEFT", statChecks[i - 1], "BOTTOMLEFT", 0, 4)
-	end
 	statChecks[i] = cb
 end
 
+-- A stat no gear of the player's progression era has (Resilience before TBC, say) isn't offered.
+local function statOffered(cb)
+	return not RAH.statsAvailable or bit.band(RAH.statsAvailable, cb.bit) ~= 0
+end
+
+-- Two columns of ten, top to bottom, closing up over the stats that aren't offered.
+local function layoutStats()
+	local shown, first, prev = 0, nil, nil
+	for _, cb in ipairs(statChecks) do
+		cb:ClearAllPoints()
+		if statOffered(cb) then
+			shown = shown + 1
+			if shown == 1 then
+				cb:SetPoint("TOPLEFT", statsLabel, "BOTTOMLEFT", -4, -2)
+				first = cb
+			elseif shown == 11 then
+				cb:SetPoint("LEFT", first, "RIGHT", 80, 0)
+			else
+				cb:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, 4)
+			end
+			prev = cb
+			cb:Show()
+		else
+			cb:Hide()
+		end
+	end
+end
+layoutStats()
+
 local function statMask()
-	return RAH.statFilters and RetailAHDB.filters.stats or 0
+	if not RAH.statFilters then return 0 end
+	local mask = RetailAHDB.filters.stats or 0
+	if RAH.statsAvailable then mask = bit.band(mask, RAH.statsAvailable) end
+	return mask
 end
 
 local resetFilters = RAH.CreateButton(filters, "Reset", 80, 20)
@@ -175,9 +200,15 @@ local function saveFilters()
 	for _, cb in ipairs(rarityChecks) do
 		if cb:GetChecked() then f.qualities[cb.quality] = true end
 	end
+	-- Stats this era doesn't offer keep their saved state: the filters are shared by the
+	-- account's characters, and a TBC one may have them ticked.
 	local mask = 0
 	for _, cb in ipairs(statChecks) do
-		if cb:GetChecked() then mask = mask + cb.bit end
+		if statOffered(cb) then
+			if cb:GetChecked() then mask = mask + cb.bit end
+		elseif bit.band(f.stats or 0, cb.bit) ~= 0 then
+			mask = mask + cb.bit
+		end
 	end
 	f.stats = mask > 0 and mask or nil
 end
@@ -190,9 +221,12 @@ local function loadFilters()
 	RAH.SetEnabled(uncollectedCheck, RAH.appearances)
 	minLevel:SetText(f.minLevel and tostring(f.minLevel) or "")
 	maxLevel:SetText(f.maxLevel and tostring(f.maxLevel) or "")
+	-- The level gate: nothing past this shows anyway.
+	levelLabel:SetText(RAH.levelCap and ("Level Range |cff808080(up to " .. RAH.levelCap .. ")|r") or "Level Range")
 	for _, cb in ipairs(rarityChecks) do cb:SetChecked(f.qualities and f.qualities[cb.quality]) end
+	layoutStats()
 	for _, cb in ipairs(statChecks) do
-		cb:SetChecked(RAH.statFilters and bit.band(f.stats or 0, cb.bit) ~= 0)
+		cb:SetChecked(RAH.statFilters and statOffered(cb) and bit.band(f.stats or 0, cb.bit) ~= 0)
 		RAH.SetEnabled(cb, RAH.statFilters)
 	end
 	if RAH.statFilters then
@@ -478,9 +512,46 @@ results:SetPoint("BOTTOMRIGHT", resultsPane, "BOTTOMRIGHT", -4, 4)
 -- answer is on its way.
 local resultCache = {}
 
+-- What a search found but the progression gates hid: "<by level>,<next level>,<by era>,<next era>".
+local function parseLocked(meta)
+	if not meta or meta == "" then return nil end
+	local byLevel, nextLevel, byEra, nextEra = meta:match("^(%d+),(%d+),(%d+),(%d+)$")
+	byLevel, byEra = tonumber(byLevel) or 0, tonumber(byEra) or 0
+	if byLevel + byEra == 0 then return nil end
+	return { byLevel = byLevel, nextLevel = tonumber(nextLevel), byEra = byEra, nextEra = tonumber(nextEra) }
+end
+
+-- "12 unlock as you level (next at 23), 4 after Blackwing Lair"
+local function lockedText(locked)
+	local parts = {}
+	if locked.byLevel > 0 then
+		table.insert(parts, locked.byLevel .. " unlock as you level (next at " .. locked.nextLevel .. ")")
+	end
+	if locked.byEra > 0 then
+		table.insert(parts, locked.byEra .. " unlock " .. (RAH.ERA_UNLOCKS[locked.nextEra] or "later in your progression"))
+	end
+	return table.concat(parts, ", ")
+end
+
+-- Hovering the result count explains the locked items.
+local lockedHover = CreateFrame("Frame", nil, panel)
+lockedHover:SetAllPoints(resultCount)
+lockedHover:EnableMouse(true)
+lockedHover:Hide()
+lockedHover:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+	GameTooltip:AddLine("Locked items")
+	GameTooltip:AddLine("This search matched items above your level or progression; they stay hidden "
+		.. "until you reach them. Items you own always show.", 1, 1, 1, true)
+	GameTooltip:AddLine(lockedText(self.locked), 1, 0.82, 0, true)
+	GameTooltip:Show()
+end)
+lockedHover:SetScript("OnLeave", function () GameTooltip:Hide() end)
+
 -- stats: the stat mask the rows were searched with, so opening one lists only the copies that
 -- have those stats.
-local function showResults(rows, truncated, emptyText, keepScroll, stats)
+-- locked: parseLocked's answer, or nil.
+local function showResults(rows, truncated, emptyText, keepScroll, stats, locked)
 	state.results = {}
 	for i, r in ipairs(rows) do
 		-- r[6], r[7]: the suffix of a group that search split by suffix ("of the Monkey").
@@ -489,7 +560,12 @@ local function showResults(rows, truncated, emptyText, keepScroll, stats)
 			randomProperty = r[6] or 0, link = RAH.ItemString(r[1], r[6], r[7]),
 		})
 	end
+	if not emptyText and locked and #rows == 0 then
+		emptyText = "Nothing you can see yet: " .. lockedText(locked) .. "."
+	end
 	results:SetEmptyText(emptyText or "No items found.")
+	lockedHover.locked = locked
+	if locked then lockedHover:Show() else lockedHover:Hide() end
 	results:SetItems(state.results, keepScroll)
 	local entries = {}
 	for i, g in ipairs(state.results) do entries[i] = g.link end
@@ -503,6 +579,9 @@ local function showResults(rows, truncated, emptyText, keepScroll, stats)
 		local text = #rows == 1 and "1 item" or (#rows .. " items")
 		if state.node then
 			text = text .. " in |cffffd200" .. state.node.name .. "|r"
+		end
+		if locked then
+			text = text .. " |cff808080+" .. (locked.byLevel + locked.byEra) .. " locked|r"
 		end
 		resultCount:SetText(text)
 	end
@@ -532,7 +611,7 @@ function Buy.Search()
 	local key = table.concat(fields, ":")
 	local cached = resultCache[key]
 	if cached then
-		showResults(cached.rows, cached.truncated, nil, nil, stats)
+		showResults(cached.rows, cached.truncated, nil, nil, stats, cached.locked)
 	else
 		resultCount:SetText("Searching...")
 	end
@@ -549,8 +628,9 @@ function Buy.Search()
 			return
 		end
 		local truncated = result.meta[2] == "1"
-		resultCache[key] = { rows = result.rows, truncated = truncated }
-		showResults(result.rows, truncated, nil, cached ~= nil, stats)
+		local locked = parseLocked(result.meta[3])
+		resultCache[key] = { rows = result.rows, truncated = truncated, locked = locked }
+		showResults(result.rows, truncated, nil, cached ~= nil, stats, locked)
 	end)
 end
 
