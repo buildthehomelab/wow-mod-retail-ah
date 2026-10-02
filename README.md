@@ -61,10 +61,27 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   ones at once.
 - The price starts at the current lowest listing (click any listing to match it), the deposit
   is worked out by the server, and 12 / 24 / 48 hour durations.
+- **AH bot price** (with [mod-ah-bot-plus](https://github.com/NathanHandley/mod-ah-bot-plus)'s
+  buyer bot on): above the listings, **AH buyer pays: X** shows what the bot pays for the item,
+  and the price box starts there: the most the bot pays every time it looks, so the post sells
+  even when no player is around to buy it. Players can still buy it, and may pay more. If the
+  bot sometimes pays more (its price has a random part), the line says how much. Click the line
+  to put the bot's price back. Items vendors sell are left out; the bot only pays vendor price
+  for them.
 
 **Auctions**
 - Your auctions, with bids and time left; cancel them.
 - Auctions you hold the top bid on; raise the bid or buy them out.
+
+**Ledger**
+- Whether the auction house makes or loses you money. Every auction that ends for you is
+  written down: **sold** (after the house cut), **bought**, **expired** (the deposit is lost) and
+  **cancelled** (the deposit, and the cut if someone had bid). A deposit only counts when it's
+  lost, since a sale returns it.
+- **History** lists them newest first, with who was on the other side (**AH bot** or a player);
+  **By Item** adds them up per item, best earners first, so you can see what's worth farming.
+- Today, 7 days, 30 days or all time, for this character or **all characters** on the account,
+  with sales, cut, lost deposits, purchases and the **net** along the bottom.
 
 The window uses [DragonUI](https://github.com/NeticSoul/DragonUI)'s retail art when DragonUI is
 loaded, and a dark retail-style look of its own otherwise. Drag it by the title bar; it stays
@@ -103,6 +120,17 @@ On the server:
   is settled like a buyout: the seller gets the sale mails and the money minus the cut and plus
   that share of the deposit, and the buyer gets the items by mail. All of it, the split included,
   is one database transaction. A stack someone has bid on is never split.
+- **The AH bot price** reads mod-ah-bot-plus's own `AuctionHouseBot.*` options and works out
+  its price formula (`CalculateItemValue`) with the random roll at its low end (what the buyer
+  pays every time) and at its high end (its best roll), times
+  `AuctionHouseBot.Buyer.AcceptablePriceModifier`. The buyer buys out when the buyout is below
+  what it's willing to pay, so the price shown is one copper under that. The two modules don't
+  link to each other; the formula is mirrored from mod-ah-bot-plus as of July 2026 (f685832).
+- **The ledger** comes from the core's auction mail hooks (sale, purchase, expiry), which every
+  way of ending an auction goes through: the stock window, this module, the AH bot's buyer and
+  the house's own expiry. A cancel is an auction that leaves the house without having sold or
+  expired. Rows go to `mod_retail_ah_ledger` in the characters database, created at startup;
+  AH bot characters get none.
 - You can't buy from yourself or your other characters, as with the old window (including an
   alt that is logged in as a playerbot).
 - One purchase takes from at most 100 listings; the window tells the player when that limits
@@ -122,7 +150,8 @@ git clone https://github.com/buildthehomelab/wow-mod-retail-ah.git mod-retail-ah
 
 The folder must be named `mod-retail-ah`: AzerothCore derives the loader name from it. Re-run
 CMake and rebuild, copy `conf/mod_retail_ah.conf.dist` to `mod_retail_ah.conf` if you want to
-change the defaults, and restart. There is no SQL to apply.
+change the defaults, and restart. There is no SQL to apply: the ledger table is created at
+startup (`data/sql/db-characters/base` has the same statement for setups that want it).
 
 ### Addon
 
@@ -141,6 +170,10 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 | `RetailAH.SearchCooldownMs` | 0 | Extra gap between two searches from one player; 0 = off. |
 | `RetailAH.ReagentBank` | 1 | Post commodities from mod-reagent-bank-account's reagent bank too. |
 | `RetailAH.Transmog` | 1 | Mark and filter mod-transmog-plus appearances the account hasn't collected. |
+| `RetailAH.BotPrice` | 1 | Show and suggest what mod-ah-bot-plus's buyer pays (needs `AuctionHouseBot.Buyer.Enabled`). |
+| `RetailAH.Ledger` | 1 | Keep the gold ledger for the Ledger tab (restart to turn on). |
+| `RetailAH.Ledger.KeepDays` | 180 | Ledger rows older than this are deleted at startup; 0 = keep. |
+| `RetailAH.Ledger.MaxRows` | 300 | Most rows the Ledger tab gets at once; totals cover everything. |
 
 ## Commands
 

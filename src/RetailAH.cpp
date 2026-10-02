@@ -60,7 +60,12 @@ namespace RetailAH
         sConfig.searchCooldownMs = sConfigMgr->GetOption<uint32>("RetailAH.SearchCooldownMs", 0);
         sConfig.reagentBank = sConfigMgr->GetOption<bool>("RetailAH.ReagentBank", true);
         sConfig.transmog = sConfigMgr->GetOption<bool>("RetailAH.Transmog", true);
+        sConfig.botPrice = sConfigMgr->GetOption<bool>("RetailAH.BotPrice", true);
+        sConfig.ledger = sConfigMgr->GetOption<bool>("RetailAH.Ledger", true);
+        sConfig.ledgerKeepDays = sConfigMgr->GetOption<uint32>("RetailAH.Ledger.KeepDays", 180);
+        sConfig.ledgerMaxRows = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("RetailAH.Ledger.MaxRows", 300), 50, 2000);
         Appearances::LoadOptions();
+        AhBot::LoadConfig();
     }
 
     void Send(Player* player, std::string const& payload)
@@ -202,7 +207,7 @@ namespace RetailAH
             Appearances::Forget(player->GetSession()->GetAccountId());
 
             uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0)
-                | HELLO_STAT_FILTERS;
+                | HELLO_STAT_FILTERS | (AhBot::BuyerEnabled() ? HELLO_BOT_PRICE : 0) | (sConfig.ledger ? HELLO_LEDGER : 0);
             Send(player, "HELLO:" + req + ":" + std::to_string(PROTOCOL_VERSION) + ":"
                 + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent)
                 + ":" + std::to_string(flags));
@@ -302,6 +307,10 @@ namespace RetailAH
                 HandlePostItem(ctx, args);
             else if (command == "RB")
                 ReagentBank::HandleContents(ctx);
+            else if (command == "V")
+                AhBot::HandleValue(ctx, args);
+            else if (command == "G")
+                Ledger::HandleLedger(ctx, args);
             else
                 SendError(ctx, "unknown");
         }
@@ -349,11 +358,43 @@ public:
 class RetailAHAuctionScript : public AuctionHouseScript
 {
 public:
-    RetailAHAuctionScript() : AuctionHouseScript("RetailAHAuctionScript", { AUCTIONHOUSEHOOK_ON_AUCTION_ADD }) { }
+    RetailAHAuctionScript() : AuctionHouseScript("RetailAHAuctionScript",
+        {
+            AUCTIONHOUSEHOOK_ON_AUCTION_ADD,
+            AUCTIONHOUSEHOOK_ON_AUCTION_REMOVE,
+            AUCTIONHOUSEHOOK_ON_BEFORE_AUCTIONHOUSEMGR_SEND_AUCTION_WON_MAIL,
+            AUCTIONHOUSEHOOK_ON_BEFORE_AUCTIONHOUSEMGR_SEND_AUCTION_SUCCESSFUL_MAIL,
+            AUCTIONHOUSEHOOK_ON_BEFORE_AUCTIONHOUSEMGR_SEND_AUCTION_EXPIRED_MAIL
+        }) { }
 
     void OnAuctionAdd(AuctionHouseObject* /*ah*/, AuctionEntry* entry) override
     {
         OnAuctionAdded(entry);
+    }
+
+    // The gold ledger. A sale's mails go out before the auction leaves the house, so by the
+    // time it's removed the ledger knows it wasn't a cancel.
+    void OnAuctionRemove(AuctionHouseObject* /*ah*/, AuctionEntry* entry) override
+    {
+        Ledger::OnRemoved(entry);
+    }
+
+    void OnBeforeAuctionHouseMgrSendAuctionWonMail(AuctionHouseMgr* /*mgr*/, AuctionEntry* auction, Player* /*bidder*/,
+        uint32& /*bidderAccId*/, bool& /*sendNotification*/, bool& /*updateAchievementCriteria*/, bool& /*sendMail*/) override
+    {
+        Ledger::OnBought(auction);
+    }
+
+    void OnBeforeAuctionHouseMgrSendAuctionSuccessfulMail(AuctionHouseMgr* /*mgr*/, AuctionEntry* auction, Player* /*owner*/,
+        uint32& /*ownerAccId*/, uint32& /*profit*/, bool& /*sendNotification*/, bool& /*updateAchievementCriteria*/, bool& /*sendMail*/) override
+    {
+        Ledger::OnSold(auction);
+    }
+
+    void OnBeforeAuctionHouseMgrSendAuctionExpiredMail(AuctionHouseMgr* /*mgr*/, AuctionEntry* auction, Player* /*owner*/,
+        uint32& /*ownerAccId*/, bool& /*sendNotification*/, bool& /*sendMail*/) override
+    {
+        Ledger::OnExpired(auction);
     }
 };
 
@@ -371,6 +412,8 @@ public:
     {
         ReagentBank::CheckTable();
         Appearances::CheckTable();
+        AhBot::LoadVendorItems();
+        Ledger::CheckTable();
     }
 };
 

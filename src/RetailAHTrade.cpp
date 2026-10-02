@@ -206,6 +206,8 @@ namespace RetailAH
             sAuctionMgr->SendAuctionWonMail(&sold, trans);
             sScriptMgr->OnAuctionSuccessful(ctx.house, &sold);
             sAuctionMgr->RemoveAItem(part->GetGUID());
+            // `sold` never enters the house, so nothing removes it from the ledger's books.
+            Ledger::Forget(sold.Id);
 
             player->SaveInventoryAndGoldToDB(trans);
             CharacterDatabase.CommitTransaction(trans);
@@ -222,6 +224,8 @@ namespace RetailAH
                 auction->item_template, total, price, auction->owner.GetCounter(), rest->itemCount, rest->Id);
 
             // RemoveAuction deletes `auction`; its item stays registered and now belongs to `rest`.
+            // Replacing it with the rest of the stack isn't a cancel.
+            Ledger::Settle(auction->Id);
             ctx.house->RemoveAuction(auction);
             ctx.house->AddAuction(rest);
             return true;

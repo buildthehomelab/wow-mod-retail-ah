@@ -281,7 +281,7 @@ local heavyQueue = {}
 local inFlight = {}  -- req -> time sent
 local inFlightCount = 0
 
-local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true }
+local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true, G = true }
 
 local function send(msg)
 	SendAddonMessage(RAH.PREFIX, msg, "WHISPER", UnitName("player"))
@@ -478,6 +478,8 @@ function RAH.OnHello(fields)
 	RAH.reagentBank = bit.band(tonumber(fields[4]) or 0, 1) ~= 0
 	RAH.appearances = bit.band(tonumber(fields[4]) or 0, 2) ~= 0
 	RAH.statFilters = bit.band(tonumber(fields[4]) or 0, 4) ~= 0
+	RAH.botPrice = bit.band(tonumber(fields[4]) or 0, 8) ~= 0  -- mod-ah-bot-plus's buyer is on
+	RAH.ledger = bit.band(tonumber(fields[4]) or 0, 16) ~= 0
 	RAH.Fire("READY")
 end
 

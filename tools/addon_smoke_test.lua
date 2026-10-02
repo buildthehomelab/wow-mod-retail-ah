@@ -203,7 +203,7 @@ local function serve(msg)
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
-	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:7")
+	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:31")
 	elseif cmd == "S" or cmd == "F" then
 		reply("SR:" .. req .. ":2:0")
 		-- 15210 is one suffix of a random-enchant item (flags 8 + 16, suffix -7, factor 55).
@@ -223,6 +223,15 @@ local function serve(msg)
 	elseif cmd == "RB" then reply("RR:" .. req); reply("RD:" .. req .. ":2589,50;2447,30"); reply("RE:" .. req)
 	elseif cmd == "PC" or cmd == "PI" then reply("POR:" .. req .. ":2:2:ok")
 	elseif cmd == "O" then reply("OR:" .. req); reply("OD:" .. req .. ":201,2589,20,0,300,86000,5,0,0"); reply("OE:" .. req)
+	elseif cmd == "V" then reply("V:" .. req .. ":1234:1800")
+	elseif cmd == "G" then
+		reply("GR:" .. req .. ":50000:2500:300:12000:35200:3:1:2:0")
+		if msg:match("^G:%d+:0:") then
+			reply("GD:" .. req .. ":120,1,2589,20,30000,1500,28500,*,Tester;7200,2,15210,1,12000,0,-12000,Seller,Tester;90000,3,2589,20,0,300,-300,-,Tester")
+		else
+			reply("GD:" .. req .. ":2589,20,28500,0,0,300,28200,120;15210,0,0,1,12000,0,-12000,7200")
+		end
+		reply("GE:" .. req)
 	elseif cmd == "BL" then reply("LR:" .. req); reply("LD:" .. req .. ":101,15210,1,3000,3150,45000,7200,-7,55"); reply("LE:" .. req)
 	else print("  !! unknown command " .. cmd) end
 end
@@ -464,7 +473,38 @@ step("reagent bank toggle off: bank-only pick cleared, bags-only flag sent", fun
 	check.__scripts.OnClick(check)
 	assert(RetailAHDB.sellFromBank == true, "setting not saved back on")
 end)
+step("bot price: suggested and shown", function ()
+	RAH.Sell.Select(0, 1)
+	tick(0.5)
+	assert(RAH.botPrice, "bot price flag not read")
+	local line = find(function (f) return f.__kind == "FontString" and f.__text:find("AH buyer pays") end)
+	assert(line, "no bot price line")
+	local priceBox = find(function (f) return rawget(f, "__copper") == 1234 end)
+	assert(priceBox, "price box not set to the bot's sure price")
+end)
 step("select gear", function () RAH.Sell.Select(0, 3) end)
+step("ledger tab", function ()
+	assert(RAH.ledger, "ledger flag not read")
+	local sent
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) if m:match("^G:") then sent = m end original(p, m, c, t) end
+	RAH.SelectTab(4)
+	tick(0.5)
+	assert(sent and sent:match("^G:%d+:0:0:7$"), "ledger request: " .. tostring(sent))
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("^Net ") end), "no net total")
+	for _, f in ipairs(allFrames) do
+		if f.__kind == "Button" and f.__text == "By Item" then f.__scripts.OnClick(f) end
+	end
+	tick(0.5)
+	assert(sent:match("^G:%d+:1:0:7$"), "by-item request: " .. tostring(sent))
+	local check = find(function (f) local l = rawget(f, "label") return type(l) == "table" and l.__text == "All characters" end)
+	check:SetChecked(true)
+	check.__scripts.OnClick(check)
+	tick(0.5)
+	assert(sent:match("^G:%d+:1:1:7$"), "account request: " .. tostring(sent))
+	assert(RetailAHDB.ledgerAccount, "account choice not saved")
+	SendAddonMessage = original
+end)
 step("auctions tab", function () RAH.SelectTab(3) end)
 step("bids view", function ()
 	for _, f in ipairs(allFrames) do

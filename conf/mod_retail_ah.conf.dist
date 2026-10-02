@@ -65,3 +65,43 @@ RetailAH.ReagentBank = 1
 #
 
 RetailAH.Transmog = 1
+
+#
+#    RetailAH.BotPrice
+#        Description: With mod-ah-bot-plus's buyer bot on (AuctionHouseBot.Buyer.Enabled), the
+#                     Sell tab shows what the bot pays for the picked item and starts the price
+#                     box at the most it pays every time it looks, so a post sells even with few
+#                     players around. Worked out from the bot's own AuctionHouseBot.* options.
+#                     Items vendors sell are left out: the bot only pays vendor price for those.
+#        Default:     1
+#
+
+RetailAH.BotPrice = 1
+
+#
+#    RetailAH.Ledger
+#        Description: Keep a gold ledger: every auction that ends for a player (sold, bought,
+#                     expired, cancelled) is written to `mod_retail_ah_ledger` in the characters
+#                     database, and the Ledger tab adds it up. The table is created at startup,
+#                     so turning this on needs a restart. AH bot characters get no rows.
+#        Default:     1
+#
+
+RetailAH.Ledger = 1
+
+#
+#    RetailAH.Ledger.KeepDays
+#        Description: Ledger rows older than this are deleted at startup. 0 keeps them forever.
+#        Default:     180
+#
+
+RetailAH.Ledger.KeepDays = 180
+
+#
+#    RetailAH.Ledger.MaxRows
+#        Description: Most rows the Ledger tab gets at once (the newest, or the best items). The
+#                     totals always cover the whole period. 50 to 2000.
+#        Default:     300
+#
+
+RetailAH.Ledger.MaxRows = 300
