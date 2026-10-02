@@ -416,6 +416,11 @@ local function sortLevel(item)
 	return info and info.itemLevel or 0
 end
 
+local function sortReqLevel(item)
+	local info = RAH.Item(item)
+	return info and info.reqLevel or 0
+end
+
 local results = RAH.CreateList(resultsPane, {
 	rows = 20,
 	columns = {
@@ -430,9 +435,13 @@ local results = RAH.CreateList(resultsPane, {
 		{ title = "Name", icon = function (g) return itemIcon(g.entry) end,
 			text = function (g) return itemName(g) end,
 			sort = function (g) return sortName(g.link) end },
-		{ title = "Level", width = 60, align = "CENTER", defaultDesc = true,
+		{ title = "iLvl", width = 52, align = "CENTER", defaultDesc = true,
 			text = function (g) local l = sortLevel(g.link); return l > 0 and tostring(l) or "" end,
 			sort = function (g) return sortLevel(g.link) end },
+		-- The level needed to use it; blank when anyone can.
+		{ title = "Req", width = 46, align = "CENTER", defaultDesc = true,
+			text = function (g) local l = sortReqLevel(g.link); return l > 1 and tostring(l) or "" end,
+			sort = function (g) return sortReqLevel(g.link) end },
 		{ title = "Available", width = 100, align = "RIGHT", defaultDesc = true,
 			text = function (g)
 				local n = bit.band(g.flags, RAH.GROUP_COMMODITY) ~= 0 and g.units or g.auctions

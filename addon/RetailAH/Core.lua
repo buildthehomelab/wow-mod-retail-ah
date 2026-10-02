@@ -142,8 +142,118 @@ local function itemString(item)
 	return item
 end
 
--- { name, link, quality, itemLevel, reqLevel, class, subclass, maxStack, equipLoc, texture,
---   sellPrice } or nil while the client is still asking the server.
+-- What the server told us about items (see src/RetailAHItemInfo.cpp), kept in RetailAHDB.items
+-- across sessions: "<quality>\t<item level>\t<required level>\t<class>\t<subclass>\t
+-- <inventory type>\t<max stack>\t<sell price>\t<name>", keyed by entry or "<entry>/<suffix>".
+-- The client's own item cache lives in its Cache folder, which a patch change wipes, and fills
+-- one slow query at a time; this one fills 40 items a message and survives.
+local parsed = {}     -- key -> info table built from RetailAHDB.items
+local queued = {}     -- key -> item, waiting for the next item-info request
+local asked = {}      -- key -> true once sent this session (answered or handed to the client)
+local MAX_TOKENS_LEN = 200
+
+-- "item:15210:0:0:0:0:0:-7:55" -> "15210/-7", entry, suffix id, suffix factor.
+local function itemKey(item)
+	local body = type(item) == "number" and tostring(item) or (type(item) == "string" and item:match("item:([%-%d:]+)"))
+	if not body then return nil end
+	local parts = {}
+	for v in (body .. ":"):gmatch("([^:]*):") do table.insert(parts, tonumber(v) or 0) end
+	local entry, rp, sf = parts[1], parts[7] or 0, parts[8] or 0
+	if not entry or entry == 0 then return nil end
+	return rp ~= 0 and (entry .. "/" .. rp) or tostring(entry), entry, rp, sf
+end
+
+local function savedInfo(key, entry, rp, sf)
+	local info = parsed[key]
+	if info then return info end
+	local line = RetailAHDB and RetailAHDB.items and RetailAHDB.items[key]
+	if not line then return nil end
+	local q, ilvl, req, cls, sub, inv, stack, sell, name = strsplit("\t", line)
+	if not name then return nil end
+	local _, _, _, hex = RAH.QualityColor(tonumber(q))
+	info = {
+		name = name, quality = tonumber(q) or 1, itemLevel = tonumber(ilvl) or 0, reqLevel = tonumber(req) or 0,
+		classId = tonumber(cls), subclassId = tonumber(sub), inventoryType = tonumber(inv),
+		maxStack = tonumber(stack) or 1, sellPrice = tonumber(sell) or 0,
+		texture = GetItemIcon and GetItemIcon(entry) or nil,
+		link = hex .. "|Hitem:" .. entry .. ":0:0:0:0:0:" .. rp .. ":" .. sf .. ":" .. (UnitLevel and UnitLevel("player") or 80)
+			.. "|h[" .. name .. "]|h|r",
+	}
+	parsed[key] = info
+	return info
+end
+
+-- Hands an item to the client's own query, for servers without item info or items it didn't
+-- know.
+local function askClient(item)
+	local key = itemString(item)
+	if not waiting[key] then
+		waiting[key] = GetTime()
+		waitingCount = waitingCount + 1
+		scanTip:SetOwner(WorldFrame, "ANCHOR_NONE")
+		scanTip:SetHyperlink(key)
+	end
+end
+
+local function unescape(text)
+	return (text:gsub("%%(%x%x)", function (h) return string.char(tonumber(h, 16)) end))
+end
+
+local function flushItemInfo()
+	if not (RAH.itemInfo and RAH.serverReady) then
+		for key, item in pairs(queued) do askClient(item) end
+		queued = {}
+		return
+	end
+	local batch, items, len = {}, {}, 0
+	local function send()
+		if #batch == 0 then return end
+		local mine, myItems = batch, items
+		RAH.Request("N", { table.concat(mine, ",") }, function (result)
+			local got = {}
+			if result then
+				for _, r in ipairs(result.rows) do
+					-- The name is last and may hold spaces, but never an unescaped ',' or ';'.
+					local key = tostring(r[1])
+					if r[10] then
+						RetailAHDB.items[key] = table.concat({ r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9],
+							unescape(tostring(r[10])) }, "\t")
+						parsed[key] = nil
+						got[key] = true
+					end
+				end
+			end
+			for i, key in ipairs(mine) do
+				if not got[key] then askClient(myItems[i]) end
+			end
+			RAH.Fire("ITEM_INFO")
+		end)
+		batch, items, len = {}, {}, 0
+	end
+	for key, item in pairs(queued) do
+		if #batch >= 40 or len + #key + 1 > MAX_TOKENS_LEN then send() end
+		table.insert(batch, key)
+		table.insert(items, item)
+		len = len + #key + 1
+	end
+	send()
+	queued = {}
+end
+
+-- A new item template stamp from the server: what we saved may be out of date.
+function RAH.SetItemStamp(stamp)
+	local key = tostring(stamp) .. ":" .. (GetLocale and GetLocale() or "")
+	if RetailAHDB.itemsStamp ~= key then
+		RetailAHDB.items = {}
+		RetailAHDB.itemsStamp = key
+		parsed = {}
+		asked = {}
+	end
+end
+
+-- { name, link, quality, itemLevel, reqLevel, maxStack, texture, sellPrice, and class, subclass,
+--   equipLoc from the client or classId, subclassId, inventoryType from the server } or nil
+-- while nobody has answered yet.
 function RAH.Item(item)
 	if not item then return nil end
 	local name, link, quality, itemLevel, reqLevel, class, subclass, maxStack, equipLoc, texture, sellPrice = GetItemInfo(item)
@@ -155,12 +265,17 @@ function RAH.Item(item)
 		}
 	end
 
-	local key = itemString(item)
-	if not waiting[key] then
-		waiting[key] = GetTime()
-		waitingCount = waitingCount + 1
-		scanTip:SetOwner(WorldFrame, "ANCHOR_NONE")
-		scanTip:SetHyperlink(key)
+	local key, entry, rp, sf = itemKey(item)
+	if not key then
+		askClient(item)
+		return nil
+	end
+	local info = savedInfo(key, entry, rp, sf)
+	if info then return info end
+	if not asked[key] then
+		asked[key] = true
+		queued[key] = item
+		RAH.Debounce("iteminfo", 0.02, flushItemInfo)
 	end
 	return nil
 end
@@ -281,7 +396,7 @@ local heavyQueue = {}
 local inFlight = {}  -- req -> time sent
 local inFlightCount = 0
 
-local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true, G = true }
+local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true, G = true, N = true }
 
 local function send(msg)
 	SendAddonMessage(RAH.PREFIX, msg, "WHISPER", UnitName("player"))
@@ -478,6 +593,8 @@ function RAH.OnHello(fields)
 	RAH.reagentBank = bit.band(tonumber(fields[4]) or 0, 1) ~= 0
 	RAH.appearances = bit.band(tonumber(fields[4]) or 0, 2) ~= 0
 	RAH.statFilters = bit.band(tonumber(fields[4]) or 0, 4) ~= 0
+	RAH.itemInfo = bit.band(tonumber(fields[4]) or 0, 32) ~= 0
+	if RAH.itemInfo then RAH.SetItemStamp(fields[5]) end
 	RAH.botPrice = bit.band(tonumber(fields[4]) or 0, 8) ~= 0  -- mod-ah-bot-plus's buyer is on
 	RAH.ledger = bit.band(tonumber(fields[4]) or 0, 16) ~= 0
 	RAH.Fire("READY")
@@ -547,6 +664,7 @@ events:SetScript("OnEvent", function (self, event, ...)
 			RetailAHDB.favorites = RetailAHDB.favorites or {}
 			RetailAHDB.duration = RetailAHDB.duration or 24
 			RetailAHDB.filters = RetailAHDB.filters or {}
+			RetailAHDB.items = RetailAHDB.items or {}
 		end
 	elseif event == "PLAYER_LOGIN" then
 		-- The stock window only opens when we hand over to it.

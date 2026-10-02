@@ -207,21 +207,24 @@ namespace RetailAH
             Appearances::Forget(player->GetSession()->GetAccountId());
 
             uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0)
-                | HELLO_STAT_FILTERS | (AhBot::BuyerEnabled() ? HELLO_BOT_PRICE : 0) | (sConfig.ledger ? HELLO_LEDGER : 0);
+                | HELLO_STAT_FILTERS | (AhBot::BuyerEnabled() ? HELLO_BOT_PRICE : 0) | (sConfig.ledger ? HELLO_LEDGER : 0)
+                | HELLO_ITEM_INFO;
             Send(player, "HELLO:" + req + ":" + std::to_string(PROTOCOL_VERSION) + ":"
                 + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent)
-                + ":" + std::to_string(flags));
+                + ":" + std::to_string(flags) + ":" + std::to_string(ItemInfo::Stamp()));
         }
 
-        bool TakeToken(SessionState& state)
+        // Item info (N) only looks up templates, so it costs a quarter of a request: a fresh
+        // search of 500 unknown items is 13 of them.
+        bool TakeToken(SessionState& state, float cost)
         {
             uint32 now = getMSTime();
             if (state.lastRefill)
                 state.tokens = std::min(REQUEST_BURST, state.tokens + getMSTimeDiff(state.lastRefill, now) * REQUEST_RATE / 1000.0f);
             state.lastRefill = now;
-            if (state.tokens < 1.0f)
+            if (state.tokens < cost)
                 return false;
-            state.tokens -= 1.0f;
+            state.tokens -= cost;
             return true;
         }
 
@@ -270,7 +273,7 @@ namespace RetailAH
             }
 
             // Favorites come in chunks of one lookup, so only real searches count for the gap.
-            if (!TakeToken(itr->second) || (command == "S" && !SearchAllowed(itr->second)))
+            if (!TakeToken(itr->second, command == "N" ? 0.25f : 1.0f) || (command == "S" && !SearchAllowed(itr->second)))
             {
                 SendError(ctx, "busy");
                 return;
@@ -311,6 +314,8 @@ namespace RetailAH
                 AhBot::HandleValue(ctx, args);
             else if (command == "G")
                 Ledger::HandleLedger(ctx, args);
+            else if (command == "N")
+                ItemInfo::HandleInfo(ctx, args);
             else
                 SendError(ctx, "unknown");
         }
@@ -406,6 +411,8 @@ public:
     void OnAfterConfigLoad(bool /*reload*/) override
     {
         LoadConfig();
+        // Modules can change item templates on a reload (stack sizes); stamp them again.
+        ItemInfo::ResetStamp();
     }
 
     void OnStartup() override
