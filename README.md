@@ -88,6 +88,95 @@ loaded, and a dark retail-style look of its own otherwise. Drag it by the title 
 where you put it. `/rah classic` opens the old window, and with it Auctionator, for players who
 want it.
 
+## What players see
+
+Two gates keep the auction house in step with the character looking at it. They apply to the
+retail window, to the classic window's search, and to bids and buyouts from either window, so
+an addon or a stale list can't reach a hidden auction.
+
+- **Level**: items needing a level more than 2 (`RetailAH.LevelGate.Margin`) above the
+  character's are hidden. Gear is judged by its required level. Items without one (trade goods,
+  recipes, bags) are judged by their item level, so a level 15 character doesn't see Thorium
+  Bars. Gear isn't judged by item level, because greens sit about five item levels above their
+  required level: that rule would hide every on-level green. Once a character reaches their era's
+  level cap (60 before TBC, 70 before WotLK), the level gate steps aside and the era decides
+  alone. Otherwise a level 60 player would lose Nexus Crystals and raid recipes, whose item
+  levels are past 62.
+- **Era** (with [mod-individual-progression](https://github.com/ZhengPeiRu21/mod-individual-progression)):
+  items the player's progression hasn't unlocked are hidden. A character who hasn't cleared
+  Molten Core sees no Blackwing Lair, Zul'Gurub, AQ, Naxxramas, Outland or Northrend items.
+  Clear MC and the BWL-era items show up on the next search.
+- **The Sell tab still prices what you own** (bags, bank, reagent bank): opening an item you
+  hold lists its auctions even if it's locked for you, so you can price a post. Owning one doesn't
+  let you buy more: searches hide it and purchases and bids are refused until you unlock it.
+- When a search hides matches, the result count says so (**37 items +5 locked**), and hovering
+  it tells you when they unlock: "3 unlock as you level (next at 24), 2 unlock after Molten
+  Core". A search where everything is locked says that instead of "No items found".
+- The **stat filters** only offer stats your era's gear has: no Resilience, Expertise, Armor
+  Penetration or Sockets before TBC. The level range shows the highest level you can see.
+
+Nothing is taken off the auction house. Everyone shares the same auctions, and each player sees
+the part their level and progression allow. A player further along can still buy an item a
+fresh character put up. GMs with GM mode on, and accounts matching IP's
+`ExcludedAccountsRegex` or `BotAccountsRegex`, see everything.
+
+### Which era unlocks an item
+
+The era gate uses mod-individual-progression's own states:
+
+| State | Unlocked by | For example |
+|------:|-------------|-------------|
+| 0 | nothing | Linen Cloth, Arcanite Bar, Lava Core, Righteous Orb, Black Lotus |
+| 1 | Molten Core cleared | Elementium Ore, BWL trash epics |
+| 3 | Blackwing Lair cleared | Zul'Gurub drops (follows `IndividualProgression.RequiredZulGurubProgression`) |
+| 4 | AQ gates open | AQ20 / AQ40 drops |
+| 6 | AQ40 cleared | Naxxramas (40) drops |
+| 8 | TBC | Netherweave Cloth, Fel Iron Ore, Arcane Dust, Hellfire greens, crafts above 300 skill |
+| 9 / 10 / 12 | SSC & TK / Hyjal & BT / Sunwell | drops from those raids and Isle of Quel'Danas |
+| 13 | WotLK | Titanium Ore, Borean Leather, level 71+ gear, crafts above 375 skill |
+| 14–17 | Ulduar / ToC / ICC / Ruby Sanctum | drops from those raids |
+
+`IndividualProgression.ProgressionLimit` caps this as it caps IP: items past the limit are
+hidden from everyone.
+
+The world DB has no "added in patch" field, so at startup the module works out each item's
+state from **where it can be obtained**, and takes the easiest source:
+
+1. **Loot and spawns.** Creature loot (plus pickpocketing and skinning), chests, gathering nodes
+   and fishing. Each source gets the state of the map it's spawned on, using the gates IP puts on
+   those maps (BWL = 1, AQ = 4, Outland = 8, Northrend = 13, Ulduar = 14, …). A level 64+
+   creature standing in the old world counts as TBC, and a level 74+ one as WotLK. Vendors only
+   count for items nothing drops, because the Darkmoon Faire sells Northrend leather and
+   Shattrath sells flour.
+2. **Derived sources, followed until they settle.** Container contents, disenchanting,
+   prospecting and milling results. Quest rewards get the quest giver's state and the state of
+   the items the quest asks for. Crafted items get the easiest place to learn the recipe
+   (trainer, recipe item or quest), the state of their reagents, and a **skill tier**: a craft
+   that needs more than 300 skill (vanilla's cap) is TBC, and more than 375 is WotLK.
+3. **Expansion floors.** Required level 61+ counts as TBC and 71+ as WotLK; gear with an item
+   level no vanilla (or TBC) item of that quality ever had is floored the same way.
+4. **Overrides.** A row in `mod_retail_ah_item_era` (world DB, created at startup) replaces all
+   of the above. Rows in mod-ah-progression's old `mod_ah_progression_item` are read too.
+
+Professions are gated by tier, not by profession: jewelcrafting, inscription, prospecting and
+milling work from the start, so low-level cut gems, inks and glyphs are visible to everyone.
+When nothing is known about an item it stays **visible**.
+
+```sql
+-- always show it
+REPLACE INTO mod_retail_ah_item_era (entry, state, comment) VALUES (12345, 0, 'why');
+-- hide it until the AQ gates open
+REPLACE INTO mod_retail_ah_item_era (entry, state, comment) VALUES (12345, 4, 'why');
+```
+
+Then `.rah reload` in game. `.rah item <id>` says what holds an item back, for example
+`Elementium Ore (18562): ... Era: needs progression 1 (Molten Core cleared, BWL unlocked).
+Easiest source: dropped by creature 13996.`
+
+This replaces **mod-ah-progression**, which did the era gate for the classic window only. Remove
+it from `modules/`; while its config is still loaded, RetailAH logs an error and leaves the
+classic window's search to it.
+
 ## How it works
 
 The addon replaces the Blizzard window when you talk to an auctioneer. It talks to the server
@@ -99,10 +188,14 @@ On the server:
 - **Searches** walk the auction house once and group auctions by item. The addon shows a
   search it has already run this visit at once and swaps in the fresh answer when it arrives,
   drops searches that a newer one replaced before they went out, and asks for item names and
-  icons for the whole result straight away. Other modules' visibility rules are honoured: an auction is shown
-  only if `OnPlayerCanPlaceAuctionBid` allows it, which is how
-  mod-ah-progression hides items above a player's progression. That needs
-  `AHProgression.BlockBids = 1` (its default); with 0, RetailAH shows everything.
+  icons for the whole result straight away. An auction is shown only if the gates above allow
+  it and every other module's `OnPlayerCanPlaceAuctionBid` does too.
+- **The classic window's search** is answered by the module for players with something to
+  hide: it parses the stock request, filters with the same gates, and answers with the core's
+  own sorting and paging, so there are no empty pages. Everyone else keeps the core's threaded
+  search. This search runs on the world thread, and with the level gate on it covers almost every
+  character below the level cap, so scanning addons such as Auctionator cost more than they did
+  with the core's search.
 - **Item names and levels** come from the server's item templates, up to 40 items per message,
   and the addon keeps them in its saved variables. The client's own item cache fills one slow
   query at a time and is wiped with every patch change, which used to leave a fresh search full
@@ -156,8 +249,10 @@ git clone https://github.com/buildthehomelab/wow-mod-retail-ah.git mod-retail-ah
 
 The folder must be named `mod-retail-ah`: AzerothCore derives the loader name from it. Re-run
 CMake and rebuild, copy `conf/mod_retail_ah.conf.dist` to `mod_retail_ah.conf` if you want to
-change the defaults, and restart. There is no SQL to apply: the ledger table is created at
-startup (`data/sql/db-characters/base` has the same statement for setups that want it).
+change the defaults, and restart. There is no SQL to apply: the ledger and era override tables
+are created at startup (`data/sql/` has the same statements for setups that want them).
+Deriving the era table takes a few seconds at startup. Remove mod-ah-progression if it is
+installed.
 
 ### Addon
 
@@ -180,6 +275,17 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 | `RetailAH.Ledger` | 1 | Keep the gold ledger for the Ledger tab (restart to turn on). |
 | `RetailAH.Ledger.KeepDays` | 180 | Ledger rows older than this are deleted at startup; 0 = keep. |
 | `RetailAH.Ledger.MaxRows` | 300 | Most rows the Ledger tab gets at once; totals cover everything. |
+| `RetailAH.EraGate` | 1 | Hide items the player's mod-individual-progression state hasn't unlocked. |
+| `RetailAH.EraGate.DeriveFromSources` | 1 | Work out eras from loot, vendors, quests and crafts; 0 = floors and overrides only. |
+| `RetailAH.EraGate.ExpansionFloors` | 1 | Level 61+/71+, past-era item levels and skill tiers count as TBC/WotLK. |
+| `RetailAH.LevelGate` | 1 | Hide items needing a level well above the character's. |
+| `RetailAH.LevelGate.Margin` | 2 | How far above the character's level an item may be and still show. |
+| `RetailAH.LevelGate.ItemLevel` | 1 | Judge items without a required level (mats, recipes, bags) by item level. |
+| `RetailAH.Gates.ClassicWindow` | 1 | Filter the classic window's search through the gates too. |
+
+The era gate also reads mod-individual-progression's `IndividualProgression.Enable`,
+`.ProgressionLimit`, `.RequiredZulGurubProgression`, `.RequiredZulAmanProgression`,
+`.ExcludedAccountsRegex` and `.BotAccountsRegex`, so there's nothing to keep in sync.
 
 ## Commands
 
@@ -188,6 +294,13 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 - `/rah reset` moves the window back to its default spot.
 - `/rah compare` toggles comparing hovered items with your equipped gear (on by default).
 - In the Buy tab, click the selected category again to clear it and search every category.
+
+GM commands on the server:
+
+- `.rah item <id or shift-click link>`: the item's level need and the era that unlocks it, with
+  the source that decided it.
+- `.rah player`: what the selected player (or you) can see, and how many items each gate hides.
+- `.rah reload` (admin): re-read the gate options and rebuild the era table.
 
 ## Not included
 

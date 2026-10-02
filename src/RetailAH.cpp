@@ -64,6 +64,12 @@ namespace RetailAH
         sConfig.ledger = sConfigMgr->GetOption<bool>("RetailAH.Ledger", true);
         sConfig.ledgerKeepDays = sConfigMgr->GetOption<uint32>("RetailAH.Ledger.KeepDays", 180);
         sConfig.ledgerMaxRows = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("RetailAH.Ledger.MaxRows", 300), 50, 2000);
+        sConfig.eraGate = sConfigMgr->GetOption<bool>("RetailAH.EraGate", true);
+        sConfig.levelGate = sConfigMgr->GetOption<bool>("RetailAH.LevelGate", true);
+        sConfig.levelMargin = std::min<uint32>(sConfigMgr->GetOption<uint32>("RetailAH.LevelGate.Margin", 2), 100);
+        sConfig.levelGateItemLevel = sConfigMgr->GetOption<bool>("RetailAH.LevelGate.ItemLevel", true);
+        sConfig.classicWindow = sConfigMgr->GetOption<bool>("RetailAH.Gates.ClassicWindow", true);
+        Gate::LoadConfig();
         Appearances::LoadOptions();
         AhBot::LoadConfig();
     }
@@ -208,10 +214,15 @@ namespace RetailAH
 
             uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0)
                 | HELLO_STAT_FILTERS | (AhBot::BuyerEnabled() ? HELLO_BOT_PRICE : 0) | (sConfig.ledger ? HELLO_LEDGER : 0)
-                | HELLO_ITEM_INFO;
+                | HELLO_ITEM_INFO | HELLO_GATES;
+            // Gates: the player's era (255 = none), the highest level need shown (0 = no level
+            // gate) and the stat filters that mean something in that era.
+            Gate::View view(player);
             Send(player, "HELLO:" + req + ":" + std::to_string(PROTOCOL_VERSION) + ":"
                 + std::to_string(ctx.houseEntry->cutPercent) + ":" + std::to_string(ctx.houseEntry->depositPercent)
-                + ":" + std::to_string(flags) + ":" + std::to_string(ItemInfo::Stamp()));
+                + ":" + std::to_string(flags) + ":" + std::to_string(ItemInfo::Stamp())
+                + ":" + std::to_string(view.Era()) + ":" + std::to_string(view.LevelCap())
+                + ":" + std::to_string(Gate::StatsAvailable(view.Era())));
         }
 
         // Item info (N) only looks up templates, so it costs a quarter of a request: a fresh
@@ -421,12 +432,18 @@ public:
         Appearances::CheckTable();
         AhBot::LoadVendorItems();
         Ledger::CheckTable();
+        Gate::Load();
     }
 };
+
+void AddRetailAHGateScripts();
+void AddRetailAHClassicScripts();
 
 void AddRetailAHScripts()
 {
     new RetailAHPlayerScript();
     new RetailAHAuctionScript();
     new RetailAHWorldScript();
+    AddRetailAHGateScripts();
+    AddRetailAHClassicScripts();
 }

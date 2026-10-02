@@ -105,3 +105,93 @@ RetailAH.Ledger.KeepDays = 180
 #
 
 RetailAH.Ledger.MaxRows = 300
+
+########################################
+# What players see
+#
+# Two gates decide which auctions a player sees, in the retail window, in the classic window and
+# for bids and buyouts from either. The Sell tab can still price items the player owns (bags,
+# bank, reagent bank), but owning one never lets them buy more. GMs with GM mode on, and accounts matching
+# mod-individual-progression's ExcludedAccountsRegex or BotAccountsRegex, see everything.
+#
+# `.rah item <id>` shows what holds an item back, `.rah player` what the selected player sees,
+# `.rah reload` re-reads these options and rebuilds the era table.
+#
+# This replaces mod-ah-progression; remove that module. While its config is loaded, the classic
+# window's search is left to it.
+########################################
+
+#
+#    RetailAH.EraGate
+#        Description: With mod-individual-progression, hide items the player's progression
+#                     hasn't unlocked: no BWL, ZG, AQ, Naxx, Outland or Northrend items before the
+#                     raid or expansion that brings them. Which state unlocks an item is worked
+#                     out at startup from the world DB (see the README); rows in
+#                     `mod_retail_ah_item_era` override it. Also follows IP's
+#                     IndividualProgression.ProgressionLimit, .RequiredZulGurubProgression and
+#                     .RequiredZulAmanProgression. Does nothing without IP.
+#        Default:     1
+#
+
+RetailAH.EraGate = 1
+
+#
+#    RetailAH.EraGate.DeriveFromSources
+#        Description: Work out each item's era from where it can be obtained (loot, vendors,
+#                     quests, crafting). 0 = only the expansion floors below plus the override
+#                     rows: TBC and WotLK items are hidden, but nothing inside vanilla is.
+#        Default:     1
+#
+
+RetailAH.EraGate.DeriveFromSources = 1
+
+#
+#    RetailAH.EraGate.ExpansionFloors
+#        Description: Treat items needing level 61+ as TBC and 71+ as WotLK (and gear with an
+#                     item level past what vanilla or TBC had), whatever their sources say. Also
+#                     gates crafts by skill tier: over 300 skill is TBC, over 375 is WotLK.
+#                     Jewelcrafting, inscription, prospecting and milling are never gated as
+#                     professions, only by these tiers.
+#        Default:     1
+#
+
+RetailAH.EraGate.ExpansionFloors = 1
+
+#
+#    RetailAH.LevelGate
+#        Description: Hide items needing a level more than RetailAH.LevelGate.Margin above the
+#                     character's. Gear is judged by its required level. Items without one
+#                     (trade goods, recipes, bags) by their item level, see .ItemLevel below.
+#                     At the era's level cap (60 before TBC, 70 before WotLK, then the server's
+#                     cap) the level gate steps aside and the era gate decides alone.
+#        Default:     1
+#
+
+RetailAH.LevelGate = 1
+
+#
+#    RetailAH.LevelGate.Margin
+#        Description: How many levels above the character an item may need and still show.
+#        Default:     2
+#
+
+RetailAH.LevelGate.Margin = 2
+
+#
+#    RetailAH.LevelGate.ItemLevel
+#        Description: Judge items without a required level by their item level. 0 = only items
+#                     with a required level are level gated, so a level 10 sees Runecloth and
+#                     Arcanite Bars.
+#        Default:     1
+#
+
+RetailAH.LevelGate.ItemLevel = 1
+
+#
+#    RetailAH.Gates.ClassicWindow
+#        Description: Filter the classic auction window's search through the same gates. Bids
+#                     and buyouts on hidden auctions are refused either way.
+#        Default:     1
+#
+
+RetailAH.Gates.ClassicWindow = 1

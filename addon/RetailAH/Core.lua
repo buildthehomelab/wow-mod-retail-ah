@@ -597,6 +597,13 @@ function RAH.OnHello(fields)
 	if RAH.itemInfo then RAH.SetItemStamp(fields[5]) end
 	RAH.botPrice = bit.band(tonumber(fields[4]) or 0, 8) ~= 0  -- mod-ah-bot-plus's buyer is on
 	RAH.ledger = bit.band(tonumber(fields[4]) or 0, 16) ~= 0
+	-- What this character may see: progression era (nil = no era gate), the highest level
+	-- need shown (nil = no level gate) and the stat filters that exist in that era.
+	RAH.gates = bit.band(tonumber(fields[4]) or 0, 64) ~= 0
+	local era, levelCap = tonumber(fields[6]), tonumber(fields[7])
+	RAH.era = RAH.gates and era and era ~= 255 and era or nil
+	RAH.levelCap = RAH.gates and levelCap and levelCap > 0 and levelCap or nil
+	RAH.statsAvailable = RAH.gates and tonumber(fields[8]) or nil
 	RAH.Fire("READY")
 end
 

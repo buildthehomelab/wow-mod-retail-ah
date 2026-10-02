@@ -20,9 +20,11 @@
 #include "Define.h"
 #include "DatabaseEnvFwd.h"
 #include "ObjectGuid.h"
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class AuctionHouseObject;
@@ -56,6 +58,12 @@ namespace RetailAH
         bool ledger = true;
         uint32 ledgerKeepDays = 180;
         uint32 ledgerMaxRows = 300;
+        // What a player may see (RetailAHGate.cpp).
+        bool eraGate = true;
+        bool levelGate = true;
+        uint32 levelMargin = 2;
+        bool levelGateItemLevel = true;
+        bool classicWindow = true;
     };
 
     // Capability bits in the HELLO answer, so a newer addon can tell what this server offers.
@@ -67,6 +75,7 @@ namespace RetailAH
         HELLO_BOT_PRICE    = 0x8,  // V answers what mod-ah-bot-plus's buyer pays
         HELLO_LEDGER       = 0x10, // G answers the gold ledger
         HELLO_ITEM_INFO    = 0x20, // N answers item names and levels; HELLO's 5th field stamps them
+        HELLO_GATES        = 0x40, // HELLO's 6th-8th fields describe what the player may see
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -99,18 +108,101 @@ namespace RetailAH
     bool ParseInt(std::string_view text, int32& out);
     std::vector<std::string_view> Split(std::string_view text, char sep, std::size_t maxParts = 0);
 
+    // ---- RetailAHGate.cpp: what a player may see -----------------------------------------------
+
+    namespace Era
+    {
+        struct Table;
+    }
+
+    namespace Gate
+    {
+        // No era gate for this player: GM, excluded or bot account, IP off or not installed.
+        constexpr uint8 ERA_ALL = 0xFF;
+
+        // Why an item is hidden from a player. Zero fields don't hold it back.
+        struct Lock
+        {
+            uint8 level = 0;  // the character level that shows it
+            uint8 era = 0;    // the mod-individual-progression state that shows it
+
+            bool Locked() const { return level || era; }
+        };
+
+        // One player's gates, worked out when a request comes in. Cheap: no database access
+        // until Owns() is asked, so it may be built on any thread that owns the player and,
+        // without Owns(), used on another (the classic search).
+        class View
+        {
+        public:
+            explicit View(Player* player);
+
+            // The item's own lock, ignoring what the player owns.
+            Lock Check(ItemTemplate const* proto) const;
+            // Can the player see, bid on and buy it.
+            bool Visible(ItemTemplate const* proto) const { return !Check(proto).Locked(); }
+            // Can the player look up its listings: also when they own one (bags, bank, reagent
+            // bank), so the Sell tab can price what they post. Never enough to buy it.
+            bool VisibleOrOwned(ItemTemplate const* proto) const;
+            // Reads the bags and the reagent bank on first use; the player's own thread only.
+            bool Owns(uint32 entry) const;
+
+            // False when nothing could be hidden from this player.
+            bool HidesAnything() const;
+            uint8 Era() const { return _era; }
+            // Highest level need shown; 0 = no level gate.
+            uint32 LevelCap() const { return _levelCap; }
+
+        private:
+            void ReadOwned() const;
+
+            Player* _player;
+            uint8 _era = ERA_ALL;
+            std::shared_ptr<Era::Table const> _table;
+            uint32 _levelCap = 0;
+            uint32 _levelCapEra = 0;  // the level where the level gate steps aside
+            mutable bool _ownedRead = false;
+            mutable std::unordered_set<uint32> _owned;
+        };
+
+        // Called from LoadConfig and at startup.
+        void LoadConfig();
+        void Load();
+        // The Buy tab's stat filters that mean something at this era (bits as GearStats::Stat).
+        uint32 StatsAvailable(uint8 era);
+        // The classic window's search runs through the gates too (RetailAHClassic.cpp).
+        bool FilterClassic();
+
+        // While one is alive on this thread, this module's own OnPlayerCanPlaceAuctionBid lets
+        // everything through: VisibilityCache has already applied the gates and only asks the
+        // hook for other modules' answers.
+        class SkipBidHook
+        {
+        public:
+            SkipBidHook();
+            ~SkipBidHook();
+            SkipBidHook(SkipBidHook const&) = delete;
+            SkipBidHook& operator=(SkipBidHook const&) = delete;
+        };
+    }
+
     // ---- RetailAHBrowse.cpp: read-only requests ----------------------------------------------
 
-    // The auctioneer's mod-ah-progression style gate (or any other module's): can this player
-    // see and bid on the auction? Asked once per item entry per request.
+    // Can this player see and bid on the auction? This module's gates first, then any other
+    // module's OnPlayerCanPlaceAuctionBid. Asked once per item entry per request. `showOwned`
+    // also shows listings of items the player owns (price lookups for the Sell tab); never use
+    // it where the answer lets them buy.
     class VisibilityCache
     {
     public:
-        explicit VisibilityCache(Player* player) : _player(player) { }
+        explicit VisibilityCache(Player* player, bool showOwned = false) : _player(player), _view(player), _showOwned(showOwned) { }
         bool Visible(AuctionEntry* auction);
+        Gate::View const& View() const { return _view; }
 
     private:
         Player* _player;
+        Gate::View _view;
+        bool _showOwned;
         std::unordered_map<uint32, bool> _seen;
     };
 
