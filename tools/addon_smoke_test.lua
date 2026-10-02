@@ -137,6 +137,14 @@ local itemDB = {
 	[15210] = { "Raider's Shortsword", 2, 25, 1, 3000, 2 },
 	[2447] = { "Peacebloom", 1, 5, 20, 4, 0 },
 }
+function strsplit(sep, text)
+	local out = {}
+	for part in (text .. sep):gmatch("(.-)" .. sep) do table.insert(out, part) end
+	return table.unpack(out)
+end
+function GetLocale() return "enUS" end
+function UnitLevel() return 80 end
+
 function GetItemInfo(item)
 	local entry = type(item) == "number" and item or tonumber(tostring(item):match("item:(%d+)"))
 	local d = itemDB[entry]
@@ -203,7 +211,7 @@ local function serve(msg)
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
-	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:31")
+	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:63:12345")
 	elseif cmd == "S" or cmd == "F" then
 		reply("SR:" .. req .. ":2:0")
 		-- 15210 is one suffix of a random-enchant item (flags 8 + 16, suffix -7, factor 55).
@@ -223,6 +231,16 @@ local function serve(msg)
 	elseif cmd == "RB" then reply("RR:" .. req); reply("RD:" .. req .. ":2589,50;2447,30"); reply("RE:" .. req)
 	elseif cmd == "PC" or cmd == "PI" then reply("POR:" .. req .. ":2:2:ok")
 	elseif cmd == "O" then reply("OR:" .. req); reply("OD:" .. req .. ":201,2589,20,0,300,86000,5,0,0"); reply("OE:" .. req)
+	elseif cmd == "N" then
+		reply("NR:" .. req)
+		local rows = {}
+		for token in msg:match("^N:%d+:(.*)$"):gmatch("[^,]+") do
+			if token:match("^9999") then
+				table.insert(rows, token .. ",3,45,40,2,7,13,1,5000,Blade%2C Cursed" .. (token:find("/") and " of the Monkey" or ""))
+			end
+		end
+		reply("ND:" .. req .. ":" .. table.concat(rows, ";"))
+		reply("NE:" .. req)
 	elseif cmd == "V" then reply("V:" .. req .. ":1234:1800")
 	elseif cmd == "G" then
 		reply("GR:" .. req .. ":50000:2500:300:12000:35200:3:1:2:0")
@@ -427,6 +445,21 @@ step("tally shows the purchase", function ()
 	local tally = findText("^Purchased:")
 	assert(tally, "no tally")
 	print("  " .. tally)
+end)
+step("item info from the server, saved across sessions", function ()
+	assert(RAH.itemInfo, "item info flag not read")
+	assert(RAH.Item(99991) == nil, "unknown item answered at once")
+	assert(RAH.Item("item:99992:0:0:0:0:0:-7:55") == nil, "unknown suffix item answered at once")
+	tick(0.5)
+	local info = RAH.Item(99991)
+	assert(info and info.name == "Blade, Cursed" and info.itemLevel == 45 and info.reqLevel == 40, "server item info not used")
+	local suffix = RAH.Item("item:99992:0:0:0:0:0:-7:55")
+	assert(suffix and suffix.name == "Blade, Cursed of the Monkey", "suffix name missing: " .. tostring(suffix and suffix.name))
+	assert(RetailAHDB.items["99991"] and RetailAHDB.items["99992/-7"], "not saved")
+	RAH.SetItemStamp(12345)
+	assert(RetailAHDB.items["99991"], "same stamp cleared the cache")
+	RAH.SetItemStamp(54321)
+	assert(not RetailAHDB.items["99991"], "new stamp kept the old cache")
 end)
 step("favorites", function () RAH.SetFavorite(2589, true); RAH.Buy.ShowFavorites() end)
 step("sell tab", function () RAH.SelectTab(2) end)

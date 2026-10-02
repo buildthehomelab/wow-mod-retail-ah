@@ -66,6 +66,7 @@ namespace RetailAH
         HELLO_STAT_FILTERS = 0x4,  // the search takes a stat mask
         HELLO_BOT_PRICE    = 0x8,  // V answers what mod-ah-bot-plus's buyer pays
         HELLO_LEDGER       = 0x10, // G answers the gold ledger
+        HELLO_ITEM_INFO    = 0x20, // N answers item names and levels; HELLO's 5th field stamps them
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -193,6 +194,16 @@ namespace RetailAH
         uint32 TemplateMask(ItemTemplate const* proto);
         // The template plus the random enchantments ("of the Monkey") rolled on this copy.
         uint32 ItemMask(ItemTemplate const* proto, Item const* item);
+    }
+
+    // ---- RetailAHItemInfo.cpp: item names and levels for the addon's own cache ---------------
+
+    namespace ItemInfo
+    {
+        // A hash of every item template, worked out on first use after startup or a reload.
+        uint32 Stamp();
+        void ResetStamp();
+        void HandleInfo(Context& ctx, std::vector<std::string_view> const& args);
     }
 
     // ---- RetailAHBot.cpp: mod-ah-bot-plus's buyer, read from its config ------------------------

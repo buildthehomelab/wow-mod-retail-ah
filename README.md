@@ -19,7 +19,7 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   that way) and the random enchantment on each copy, so "of the Monkey" items match Agility and
   Stamina.
 - Results are **grouped by item**, like retail: one row per item with the lowest price, item
-  level and how many are available. Sort by any column. No pages. Gear with random enchantments
+  level (**iLvl**), the level needed to use it (**Req**) and how many are available. Sort by any column. No pages. Gear with random enchantments
   gets a row per suffix ("Bandit Cinch of the Monkey", "... of the Bear"), so searching "monkey"
   finds only the Monkey ones, and opening a row lists only that suffix.
 - Hovering an item **compares it with what you have equipped**, without holding Shift.
@@ -103,6 +103,12 @@ On the server:
   only if `OnPlayerCanPlaceAuctionBid` allows it, which is how
   mod-ah-progression hides items above a player's progression. That needs
   `AHProgression.BlockBids = 1` (its default); with 0, RetailAH shows everything.
+- **Item names and levels** come from the server's item templates, up to 40 items per message,
+  and the addon keeps them in its saved variables. The client's own item cache fills one slow
+  query at a time and is wiped with every patch change, which used to leave a fresh search full
+  of "Loading..." rows; now only the first sight of an item waits, and only briefly. The server
+  sends a stamp of its item templates with HELLO, and the addon throws its copy away when the
+  stamp changes (an item edited, stack sizes changed).
 - **Buying a whole auction, bidding, cancelling and posting** are handed to the core's own
   auction handlers, as if the stock window had sent them. Deposits, the house cut, mails,
   achievements, GM logging and every other module's hooks behave exactly as before.
