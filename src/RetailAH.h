@@ -52,6 +52,10 @@ namespace RetailAH
         uint32 searchCooldownMs = 0;
         bool reagentBank = true;
         bool transmog = true;
+        bool botPrice = true;
+        bool ledger = true;
+        uint32 ledgerKeepDays = 180;
+        uint32 ledgerMaxRows = 300;
     };
 
     // Capability bits in the HELLO answer, so a newer addon can tell what this server offers.
@@ -60,6 +64,8 @@ namespace RetailAH
         HELLO_REAGENT_BANK = 0x1,
         HELLO_APPEARANCES  = 0x2,  // mod-transmog-plus collections: marker and filter
         HELLO_STAT_FILTERS = 0x4,  // the search takes a stat mask
+        HELLO_BOT_PRICE    = 0x8,  // V answers what mod-ah-bot-plus's buyer pays
+        HELLO_LEDGER       = 0x10, // G answers the gold ledger
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -187,6 +193,41 @@ namespace RetailAH
         uint32 TemplateMask(ItemTemplate const* proto);
         // The template plus the random enchantments ("of the Monkey") rolled on this copy.
         uint32 ItemMask(ItemTemplate const* proto, Item const* item);
+    }
+
+    // ---- RetailAHBot.cpp: mod-ah-bot-plus's buyer, read from its config ------------------------
+
+    namespace AhBot
+    {
+        // Reads AuctionHouseBot.* from the bot's config, at every config load.
+        void LoadConfig();
+        // The vendor-sold items the buyer won't overpay for; world database, at startup.
+        void LoadVendorItems();
+        // The buyer bot is on (and has characters), and RetailAH.BotPrice allows showing it.
+        bool BuyerEnabled();
+        // One of AuctionHouseBot.GUIDs.
+        bool IsBot(ObjectGuid::LowType guid);
+        // The per-unit buyouts the buyer takes: at or below `always` on every look, at or below
+        // `upTo` on its luckiest roll. False when it never buys this item.
+        bool BuyRange(ItemTemplate const* proto, uint64& always, uint64& upTo);
+        void HandleValue(Context& ctx, std::vector<std::string_view> const& args);
+    }
+
+    // ---- RetailAHLedger.cpp: every character's auction house gold, in and out ------------------
+
+    namespace Ledger
+    {
+        void CheckTable();
+        // From the AuctionHouseScript; all on the world thread.
+        void OnSold(AuctionEntry const* auction);
+        void OnBought(AuctionEntry const* auction);
+        void OnExpired(AuctionEntry const* auction);
+        void OnRemoved(AuctionEntry const* auction);
+        // The auction leaves the house without being cancelled (BuyPart replaces it with the
+        // rest of the stack), or was never in the house; nothing more to record for it.
+        void Settle(uint32 auctionId);
+        void Forget(uint32 auctionId);
+        void HandleLedger(Context& ctx, std::vector<std::string_view> const& args);
     }
 }
 

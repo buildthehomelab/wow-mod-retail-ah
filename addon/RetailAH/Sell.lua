@@ -19,6 +19,9 @@ local state = {
 	settingPrice = false,  -- the addon is filling the price box, not the player
 	listingsReq = nil,
 	depositReq = nil,
+	lowest = nil,       -- cheapest competing price, per unit for commodities
+	bot = nil,          -- { always, upTo }: what the AH buyer bot pays per unit, if it buys this
+	botReq = nil,
 	bank = {},          -- reagent bank contents, entry -> amount
 	bankReq = nil,
 }
@@ -214,6 +217,46 @@ local function setPrice(copper)
 	priceInput:SetCopper(copper)
 end
 
+-- What the AH buyer bot pays, above the listings: with few players around it's often the only
+-- buyer, so the price box starts at the most it's sure to pay. Click to put that price back.
+local botLine = CreateFrame("Button", nil, listingPane)
+botLine:SetPoint("TOPLEFT", listingPane, "TOPLEFT", 10, -26)
+botLine:SetPoint("TOPRIGHT", listingPane, "TOPRIGHT", -10, -26)
+botLine:SetHeight(16)
+botLine:Hide()
+local botText = botLine:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+botText:SetAllPoints(botLine)
+botText:SetJustifyH("LEFT")
+local botHighlight = botLine:CreateTexture(nil, "HIGHLIGHT")
+botHighlight:SetAllPoints(botLine)
+botHighlight:SetTexture(1, 1, 1, 0.08)
+
+-- The price to suggest for the bot: what it pays on every look, or failing that its best roll.
+local function botPrice()
+	local bot = state.bot
+	if not bot then return nil end
+	return bot.always > 0 and bot.always or bot.upTo
+end
+
+botLine:SetScript("OnClick", function () local p = botPrice() if p then setPrice(p) end end)
+botLine:SetScript("OnEnter", function (self)
+	local bot = state.bot
+	if not bot then return end
+	local per = state.item and state.item.commodity and " each" or ""
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:AddLine("AH buyer bot")
+	if bot.always > 0 then
+		GameTooltip:AddLine("Buys out at " .. RAH.Money(bot.always) .. per .. " or less every time it looks.", 1, 1, 1, true)
+	end
+	if bot.upTo > bot.always then
+		GameTooltip:AddLine("Up to " .. RAH.Money(bot.upTo) .. per .. " if it rolls high, so sometimes.", 1, 1, 1, true)
+	end
+	GameTooltip:AddLine("It checks a few auctions every few minutes, so a sale can take a while. Players may pay more.", 0.7, 0.7, 0.7, true)
+	GameTooltip:AddLine("Click to use the sure price.", 0, 1, 0)
+	GameTooltip:Show()
+end)
+botLine:SetScript("OnLeave", function () GameTooltip:Hide() end)
+
 -- Fill the price box without it counting as the player's choice.
 local function suggestPrice(copper)
 	state.settingPrice = true
@@ -264,6 +307,29 @@ local auctionList = RAH.CreateList(listingPane, {
 })
 auctionList:SetPoint("TOPLEFT", listingPane, "TOPLEFT", 4, -28)
 auctionList:SetPoint("BOTTOMRIGHT", listingPane, "BOTTOMRIGHT", -4, 4)
+
+-- Shows or hides the bot line, making room for it above the listings.
+local function updateBotLine()
+	local bot = state.bot
+	local top = -28
+	if bot and state.item then
+		local per = state.item.commodity and " each" or ""
+		local text = "|cff4fc3f7AH buyer pays:|r " .. RAH.Money(botPrice()) .. per
+		if bot.always > 0 and bot.upTo > bot.always then
+			text = text .. "  |cff808080(sometimes up to " .. RAH.Money(bot.upTo) .. ")|r"
+		end
+		botText:SetText(text)
+		botLine:Show()
+		top = -44
+	else
+		botLine:Hide()
+	end
+	for _, list in ipairs({ tierList, auctionList }) do
+		list:ClearAllPoints()
+		list:SetPoint("TOPLEFT", listingPane, "TOPLEFT", 4, top)
+		list:SetPoint("BOTTOMRIGHT", listingPane, "BOTTOMRIGHT", -4, 4)
+	end
+end
 auctionList:Hide()
 
 -----------------------------------------
@@ -393,10 +459,14 @@ local function requestDeposit()
 	end)
 end
 
-local function defaultPrice(lowest)
+-- The price box starts at what the AH buyer bot is sure to pay, else the cheapest listing.
+local function defaultPrice()
 	local item = state.item
 	if state.priceTouched or not item then return end
-	if lowest and lowest > 0 then
+	local lowest = state.lowest
+	if botPrice() then
+		suggestPrice(botPrice())
+	elseif lowest and lowest > 0 then
 		suggestPrice(lowest)
 	else
 		-- Nothing to compare with: a few times what a vendor pays.
@@ -421,7 +491,8 @@ local function loadListings()
 				if r[3] < r[2] and (not lowest or r[1] < lowest) then lowest = r[1] end
 			end
 			tierList:SetItems(list)
-			defaultPrice(lowest)
+			state.lowest = lowest
+			defaultPrice()
 		end)
 	else
 		tierList:Hide(); auctionList:Show()
@@ -437,9 +508,27 @@ local function loadListings()
 				end
 			end
 			auctionList:SetItems(list)
-			defaultPrice(lowest)
+			state.lowest = lowest
+			defaultPrice()
 		end)
 	end
+end
+
+local function loadBotPrice()
+	local item = state.item
+	state.bot = nil
+	state.botReq = nil
+	updateBotLine()
+	if not item or not RAH.botPrice then return end
+	local token = {}
+	state.botReq = token
+	RAH.Request("V", { item.entry }, function (result)
+		if state.botReq ~= token or not result then return end
+		local always, upTo = tonumber(result[1]) or 0, tonumber(result[2]) or 0
+		state.bot = upTo > 0 and { always = always, upTo = upTo } or nil
+		updateBotLine()
+		defaultPrice()
+	end)
 end
 
 local function showForm(item)
@@ -471,6 +560,7 @@ end
 function Sell.SelectGroup(item)
 	state.item = item
 	state.priceTouched = false
+	state.lowest = nil
 	state.available = item.count
 	state.deposit = 0
 	suggestPrice(0)
@@ -478,6 +568,7 @@ function Sell.SelectGroup(item)
 	qtyBox:SetText(tostring(item.commodity and (item.count + (item.bank or 0)) or 1))
 	showForm(item)
 	bagItems:Refresh()
+	loadBotPrice()
 	loadListings()
 	requestDeposit()
 end
@@ -504,6 +595,9 @@ function Sell.Clear()
 	state.item = nil
 	state.listingsReq = nil
 	state.depositReq = nil
+	state.bot = nil
+	state.botReq = nil
+	updateBotLine()
 	showForm(nil)
 	bagItems:Refresh()
 end
