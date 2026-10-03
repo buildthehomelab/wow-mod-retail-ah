@@ -34,14 +34,18 @@ end
 local dragon = RAH.DressWindow(frame)
 
 local title = frame.chrome:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-title:SetPoint("TOP", frame, "TOP", 0, -5)
+if frame.headerPlate then
+	title:SetPoint("TOP", frame.headerPlate, "TOP", 0, -14)
+else
+	title:SetPoint("TOP", frame, "TOP", 0, -5)
+end
 title:SetText(AUCTION_HOUSE or "Auction House")
 
 -- The title bar is the drag handle.
 local dragBar = CreateFrame("Frame", nil, frame)
-dragBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-dragBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -28, 0)
-dragBar:SetHeight(24)
+dragBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, dragon and 0 or 12)
+dragBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -30, 0)
+dragBar:SetHeight(dragon and 24 or 36)
 dragBar:EnableMouse(true)
 dragBar:RegisterForDrag("LeftButton")
 dragBar:SetScript("OnDragStart", function () frame:StartMoving() end)
@@ -52,7 +56,7 @@ dragBar:SetScript("OnDragStop", function ()
 end)
 
 local close = CreateFrame("Button", "RetailAHFrameCloseButton", frame, "UIPanelCloseButton")
-close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
+close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", dragon and 2 or -4, dragon and 2 or -4)
 do
 	local _, CP = RAH.Dragon()
 	if CP and CP.ModernizeCloseButton then
@@ -63,18 +67,18 @@ end
 
 -- Content area shared by every tab.
 local content = CreateFrame("Frame", nil, frame)
-content:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, dragon and -28 or -30)
-content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 34)
+content:SetPoint("TOPLEFT", frame, "TOPLEFT", dragon and 12 or 16, dragon and -28 or -32)
+content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", dragon and -12 or -16, 34)
 RAH.content = content
 
 -----------------------------------------
 -- bottom bar: money, status
 
 local money = RAH.CreateMoneyText(frame, "GameFontHighlight")
-money:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, 12)
+money:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 18, dragon and 12 or 16)
 
 local status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-status:SetPoint("BOTTOM", frame, "BOTTOM", 60, 13)
+status:SetPoint("BOTTOM", frame, "BOTTOM", 60, dragon and 13 or 17)
 status:SetWidth(430)
 status:SetJustifyH("CENTER")
 

@@ -74,14 +74,15 @@ local filters = CreateFrame("Frame", nil, panel)
 filters:SetSize(430, 284)
 filters:SetPoint("TOPLEFT", filterButton, "BOTTOMLEFT", 0, -4)
 filters:SetFrameStrata("DIALOG")
-filters:SetBackdrop({
-	bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-	tile = true, tileSize = 16, edgeSize = 16,
-	insets = { left = 4, right = 4, top = 4, bottom = 4 },
-})
-filters:SetBackdropColor(0.05, 0.05, 0.06, 0.97)
-filters:SetBackdropBorderColor(0.6, 0.6, 0.65, 1)
+-- The stock tooltip look; DragonUI's dark panel when it's there.
+filters:SetBackdrop(RAH.TOOLTIP_BACKDROP)
+if RAH.Dragon() then
+	filters:SetBackdropColor(0.05, 0.05, 0.06, 0.97)
+	filters:SetBackdropBorderColor(0.6, 0.6, 0.65, 1)
+else
+	filters:SetBackdropColor(0, 0, 0, 0.95)
+	filters:SetBackdropBorderColor(1, 1, 1, 1)
+end
 filters:EnableMouse(true)
 filters:Hide()
 
@@ -351,26 +352,32 @@ for i = 1, CATEGORY_ROWS do
 			end
 		end
 	else
-		-- A dark bar with a hairline of gold on top, a gap between rows, and a +/- sign.
-		local bar = RAH.Solid(btn, "BACKGROUND", 0.13, 0.13, 0.15, 0.95)
-		bar:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, -1)
-		bar:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 1)
-		local rule = RAH.Solid(btn, "BORDER", 1, 0.82, 0, 0.15)
-		rule:SetHeight(1)
-		rule:SetPoint("TOPLEFT", bar, "TOPLEFT")
-		rule:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
-		btn.bar = { bar, rule }
+		-- The stock auction window's category button: its filter bar (faded for subcategories,
+		-- as Blizzard's is), the tab highlight, and a +/- sign for categories that open.
+		local bar = btn:CreateTexture(nil, "BACKGROUND")
+		bar:SetTexture("Interface\\AuctionFrame\\UI-AuctionFrame-FilterBg")
+		bar:SetTexCoord(0, 0.53125, 0, 0.625)
+		bar:SetAllPoints(btn)
+		btn.bar = { bar }
 		local sign = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		sign:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
 		btn.SetExpander = function (self, hasChildren, open)
 			sign:SetText(hasChildren and (open and "-" or "+") or "")
 		end
 	end
-	btn.selected = RAH.Solid(btn, "BORDER", 0.25, 0.55, 1, 0.3)
-	btn.selected:SetAllPoints(btn)
 	local hl = btn:CreateTexture(nil, "HIGHLIGHT")
 	hl:SetAllPoints(btn)
-	hl:SetTexture(1, 1, 1, 0.1)
+	if D then
+		btn.selected = RAH.Solid(btn, "BORDER", 0.25, 0.55, 1, 0.3)
+		hl:SetTexture(1, 1, 1, 0.1)
+	else
+		btn.selected = btn:CreateTexture(nil, "BORDER")
+		btn.selected:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight")
+		btn.selected:SetBlendMode("ADD")
+		hl:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight")
+		hl:SetBlendMode("ADD")
+	end
+	btn.selected:SetAllPoints(btn)
 	btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	btn.text:SetJustifyH("LEFT")
 	btn.text:SetPoint("RIGHT", btn, "RIGHT", -6, 0)

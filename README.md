@@ -90,8 +90,10 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   the last 14 days. It ranks the recipes a player knows by profit, with what they can craft right
   now from their bags and reagent bank first. `RetailAH.CraftPrices = 0` turns it off.
 
-The window uses [DragonUI](https://github.com/NeticSoul/DragonUI)'s retail art when DragonUI is
-loaded, and a dark retail-style look of its own otherwise. Drag it by the title bar; it stays
+The window is built from stock Blizzard frames: the dialog frame with its header plate, tooltip-
+bordered panes, the auction window's own category buttons and column headers, stock buttons,
+checkboxes and scroll bars. With [DragonUI](https://github.com/NeticSoul/DragonUI) loaded it
+wears DragonUI's retail skin instead. Drag it by the title bar; it stays
 where you put it. `/rah classic` opens the old window, and with it Auctionator, for players who
 want it.
 

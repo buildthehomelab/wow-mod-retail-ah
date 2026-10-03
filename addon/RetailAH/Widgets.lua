@@ -39,15 +39,25 @@ end
 -----------------------------------------
 -- window chrome and panes
 
-local FALLBACK_BACKDROP = {
-	bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+-- Without DragonUI every window is a stock Blizzard dialog frame: the dialog-box border and
+-- background, with the gold header plate for the title (frame.headerPlate).
+local DIALOG_BACKDROP = {
+	bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+	edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+	tile = true, tileSize = 32, edgeSize = 32,
+	insets = { left = 11, right = 12, top = 12, bottom = 11 },
+}
+
+-- The stock tooltip look, for panes and pop-up panels.
+RAH.TOOLTIP_BACKDROP = {
+	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
 	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
 	tile = true, tileSize = 16, edgeSize = 16,
 	insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
 
--- The outer window: DragonUI's metal frame (the one without a portrait ring) on rock, or a dark
--- bordered box.
+-- The outer window: DragonUI's metal frame (the one without a portrait ring) on rock, or the
+-- stock Blizzard dialog frame.
 function RAH.DressWindow(frame)
 	local D = RAH.Dragon()
 	if D then
@@ -76,22 +86,17 @@ function RAH.DressWindow(frame)
 		return true
 	end
 
-	frame:SetBackdrop(FALLBACK_BACKDROP)
-	frame:SetBackdropColor(0.05, 0.05, 0.06, 0.96)
-	frame:SetBackdropBorderColor(0.55, 0.55, 0.6, 1)
-	local band = solid(frame, "BORDER", 0.12, 0.12, 0.14, 1)
-	band:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4)
-	band:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4)
-	band:SetHeight(20)
-	local rule = solid(frame, "BORDER", 1, 0.82, 0, 0.35)
-	rule:SetHeight(1)
-	rule:SetPoint("TOPLEFT", band, "BOTTOMLEFT")
-	rule:SetPoint("TOPRIGHT", band, "BOTTOMRIGHT")
+	frame:SetBackdrop(DIALOG_BACKDROP)
+	local plate = frame:CreateTexture(nil, "ARTWORK")
+	plate:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+	plate:SetSize(320, 64)
+	plate:SetPoint("TOP", frame, "TOP", 0, 12)
+	frame.headerPlate = plate
 	frame.chrome = frame
 	return false
 end
 
--- A recessed pane (retail's InsetFrameTemplate).
+-- A recessed pane: retail's InsetFrameTemplate with DragonUI, the stock tooltip border without.
 function RAH.CreateInset(parent)
 	local pane = CreateFrame("Frame", nil, parent)
 	local D = RAH.Dragon()
@@ -100,31 +105,21 @@ function RAH.CreateInset(parent)
 		bg:SetAllPoints(pane)
 		NineSliceUtils.ApplyLayout(pane, NineSliceUtils.GetLayout("InsetFrameTemplate"))
 	else
-		pane:SetBackdrop({
-			bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-			tile = true, tileSize = 16, edgeSize = 12,
-			insets = { left = 3, right = 3, top = 3, bottom = 3 },
-		})
-		pane:SetBackdropColor(0.03, 0.03, 0.04, 0.9)
-		pane:SetBackdropBorderColor(0.35, 0.35, 0.4, 0.9)
+		pane:SetBackdrop(RAH.TOOLTIP_BACKDROP)
+		pane:SetBackdropColor(0, 0, 0, 0.75)
+		pane:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
 	end
 	return pane
 end
 
--- A FauxScrollFrame's bar: DragonUI's thin one, or a dark track behind the stock one.
+-- A FauxScrollFrame's bar: DragonUI's thin one, or the stock one as it is.
 function RAH.SkinScrollBar(scroll, scrollName)
 	local bar = _G[scrollName .. "ScrollBar"]
 	if not bar then return end
 	local _, CP = RAH.Dragon()
 	if CP and CP.ReskinScrollBar then
 		pcall(CP.ReskinScrollBar, scroll, scroll, -7, 18, -7, true)
-		return
 	end
-	-- The stock arrows sit just outside the slider.
-	local track = solid(bar, "BACKGROUND", 0, 0, 0, 0.45)
-	track:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 18)
-	track:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, -18)
 end
 
 -----------------------------------------
@@ -293,16 +288,21 @@ function RAH.CreateList(parent, spec)
 	list.sortDesc = spec.defaultDesc
 	list:SetHeight(HEADER_HEIGHT + spec.rows * rowHeight + 4)
 
-	-- header strip: dark with a thin gold rule, as the Auctionator skin does
+	local dragon = RAH.Dragon() and true or false
+
+	-- header strip: with DragonUI dark with a thin gold rule, as the Auctionator skin does;
+	-- otherwise each column gets the stock column tab (the auction and who lists' headers)
 	local header = CreateFrame("Frame", nil, list)
 	header:SetPoint("TOPLEFT", list, "TOPLEFT", 0, 0)
 	header:SetPoint("TOPRIGHT", list, "TOPRIGHT", -18, 0)
 	header:SetHeight(HEADER_HEIGHT)
-	solid(header, "BACKGROUND", 0, 0, 0, 0.45):SetAllPoints(header)
-	local rule = solid(header, "BORDER", 1, 0.82, 0, 0.35)
-	rule:SetHeight(1)
-	rule:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT")
-	rule:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT")
+	if dragon then
+		solid(header, "BACKGROUND", 0, 0, 0, 0.45):SetAllPoints(header)
+		local rule = solid(header, "BORDER", 1, 0.82, 0, 0.35)
+		rule:SetHeight(1)
+		rule:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT")
+		rule:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT")
+	end
 
 	local scrollName = uniqueName("Scroll")
 	local scroll = CreateFrame("ScrollFrame", scrollName, list, "FauxScrollFrameTemplate")
@@ -343,11 +343,34 @@ function RAH.CreateList(parent, spec)
 		h.arrow:SetTexture("Interface\\Buttons\\UI-SortArrow")
 		h.arrow:SetSize(9, 8)
 		h.arrow:SetPoint("RIGHT", h, "RIGHT", -2, 0)
-		h.arrow:SetVertexColor(1, 0.82, 0)
 		h.arrow:Hide()
-		local wash = h:CreateTexture(nil, "HIGHLIGHT")
-		wash:SetAllPoints(h)
-		wash:SetTexture(1, 1, 1, 0.08)
+		if dragon then
+			h.arrow:SetVertexColor(1, 0.82, 0)
+			local wash = h:CreateTexture(nil, "HIGHLIGHT")
+			wash:SetAllPoints(h)
+			wash:SetTexture(1, 1, 1, 0.08)
+		else
+			local function tab(l, r, w)
+				local tex = h:CreateTexture(nil, "BACKGROUND")
+				tex:SetTexture("Interface\\FriendsFrame\\WhoFrame-ColumnTabs")
+				tex:SetTexCoord(l, r, 0, 0.75)
+				tex:SetHeight(HEADER_HEIGHT)
+				if w then tex:SetWidth(w) end
+				return tex
+			end
+			local tl = tab(0, 0.078125, 5)
+			tl:SetPoint("TOPLEFT", h, "TOPLEFT")
+			local tr = tab(0.90625, 0.96875, 4)
+			tr:SetPoint("TOPRIGHT", h, "TOPRIGHT")
+			local tm = tab(0.078125, 0.90625)
+			tm:SetPoint("TOPLEFT", tl, "TOPRIGHT")
+			tm:SetPoint("TOPRIGHT", tr, "TOPLEFT")
+			local hl = h:CreateTexture(nil, "HIGHLIGHT")
+			hl:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Tab-Highlight")
+			hl:SetBlendMode("ADD")
+			hl:SetPoint("TOPLEFT", h, "TOPLEFT", 2, 0)
+			hl:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -2, 0)
+		end
 		if col.sort then
 			h:SetScript("OnClick", function ()
 				if list.sortColumn == i then
@@ -371,13 +394,24 @@ function RAH.CreateList(parent, spec)
 		row:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -2 - (r - 1) * rowHeight)
 		row:SetPoint("RIGHT", header, "RIGHT")
 		row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-		if r % 2 == 0 then solid(row, "BACKGROUND", 1, 1, 1, 0.035):SetAllPoints(row) end
-		row.selected = solid(row, "BORDER", 0.25, 0.55, 1, 0.28)
-		row.selected:SetAllPoints(row)
-		row.selected:Hide()
 		local hl = row:CreateTexture(nil, "HIGHLIGHT")
 		hl:SetAllPoints(row)
-		hl:SetTexture(1, 1, 1, 0.08)
+		if dragon then
+			if r % 2 == 0 then solid(row, "BACKGROUND", 1, 1, 1, 0.035):SetAllPoints(row) end
+			row.selected = solid(row, "BORDER", 0.25, 0.55, 1, 0.28)
+			hl:SetTexture(1, 1, 1, 0.08)
+		else
+			-- the stock auction list's row highlight, locked on for the selection
+			row.selected = row:CreateTexture(nil, "BORDER")
+			row.selected:SetTexture("Interface\\HelpFrame\\HelpFrameButton-Highlight")
+			row.selected:SetTexCoord(0, 1, 0, 0.578125)
+			row.selected:SetBlendMode("ADD")
+			hl:SetTexture("Interface\\HelpFrame\\HelpFrameButton-Highlight")
+			hl:SetTexCoord(0, 1, 0, 0.578125)
+			hl:SetBlendMode("ADD")
+		end
+		row.selected:SetAllPoints(row)
+		row.selected:Hide()
 
 		row.cells = {}
 		for i, col in ipairs(spec.columns) do
