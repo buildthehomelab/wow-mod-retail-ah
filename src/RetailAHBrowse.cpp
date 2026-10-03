@@ -159,6 +159,29 @@ namespace RetailAH
             std::wstring name;
         };
 
+        // A recipe (or pet, mount) whose spell the player already has. Player::CanUseItem doesn't
+        // check this, but the stock "usable items" search does; same two cases as
+        // AuctionHouseUsablePlayerInfo::PlayerCanUseItem.
+        bool AlreadyKnown(ItemTemplate const* proto, Player* player)
+        {
+            uint32 spellId = proto->Spells[0].SpellId;
+            if (!spellId)
+                return false;
+
+            // Vanilla recipes: the item's spell is its own learning spell.
+            SpellEntry const* spell = sSpellStore.LookupEntry(spellId);
+            if (spell && spell->Effect[0] == SPELL_EFFECT_LEARN_SPELL && spell->EffectTriggerSpell[0]
+                && player->HasSpell(spell->EffectTriggerSpell[0]))
+                return true;
+
+            // TBC/WotLK recipes, pets and mounts: 483/55884 learn the item's second spell.
+            if ((spellId == 483 || spellId == 55884) && proto->Spells[1].SpellId
+                && player->HasSpell(proto->Spells[1].SpellId))
+                return true;
+
+            return false;
+        }
+
         bool MatchesTemplate(Filter const& filter, ItemTemplate const* proto, Player* player)
         {
             if (filter.itemClass >= 0 && proto->Class != uint32(filter.itemClass))
@@ -177,7 +200,7 @@ namespace RetailAH
                 return false;
             if (filter.maxLevel && proto->RequiredLevel > filter.maxLevel)
                 return false;
-            if ((filter.flags & SEARCH_USABLE) && player->CanUseItem(proto) != EQUIP_ERR_OK)
+            if ((filter.flags & SEARCH_USABLE) && (player->CanUseItem(proto) != EQUIP_ERR_OK || AlreadyKnown(proto, player)))
                 return false;
             if ((filter.flags & SEARCH_UNCOLLECTED) && Appearances::State(player, proto) != Appearances::Look::Uncollected)
                 return false;
