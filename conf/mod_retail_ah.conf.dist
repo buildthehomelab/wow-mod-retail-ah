@@ -106,6 +106,20 @@ RetailAH.Ledger.KeepDays = 180
 
 RetailAH.Ledger.MaxRows = 300
 
+#
+#    RetailAH.CraftPrices
+#        Description: Answer price lookups from the RetailProfessions addon (mod-retail-professions)
+#                     anywhere, not only at an auctioneer: its profit view ranks the recipes a
+#                     player knows by what the product sells for minus what the reagents cost.
+#                     It gets the lowest buyout and units listed (the player's own auctions left
+#                     out), what the AH bot buyer pays, vendor prices of reagents vendors sell, and
+#                     how much sold in the last 14 days (from the ledger, kept in memory). Items
+#                     the era gate hides get no prices unless the player owns one.
+#        Default:     1
+#
+
+RetailAH.CraftPrices = 1
+
 ########################################
 # What players see
 #
