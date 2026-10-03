@@ -64,6 +64,8 @@ namespace RetailAH
         uint32 levelMargin = 2;
         bool levelGateItemLevel = true;
         bool classicWindow = true;
+        // K: prices for the profession window, asked away from the auctioneer.
+        bool craftPrices = true;
     };
 
     // Capability bits in the HELLO answer, so a newer addon can tell what this server offers.
@@ -76,6 +78,7 @@ namespace RetailAH
         HELLO_LEDGER       = 0x10, // G answers the gold ledger
         HELLO_ITEM_INFO    = 0x20, // N answers item names and levels; HELLO's 5th field stamps them
         HELLO_GATES        = 0x40, // HELLO's 6th-8th fields describe what the player may see
+        HELLO_CRAFT_PRICES = 0x80, // K answers prices anywhere (RetailProfessions' profit view)
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -331,6 +334,18 @@ namespace RetailAH
         void Settle(uint32 auctionId);
         void Forget(uint32 auctionId);
         void HandleLedger(Context& ctx, std::vector<std::string_view> const& args);
+    }
+
+    // ---- RetailAHCraftPrices.cpp: prices for the profession window's profit view -------------
+
+    namespace CraftPrices
+    {
+        // Vendor items and the recent sales out of the ledger; at startup, after the ledger.
+        void Load();
+        // From the auction won mail hook: every sale, whoever is on either side.
+        void OnSold(AuctionEntry const* auction);
+        // Needs no auctioneer: ctx has only the player and the request id.
+        void HandlePrices(Context& ctx, std::vector<std::string_view> const& args);
     }
 }
 

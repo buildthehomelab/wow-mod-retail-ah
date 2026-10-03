@@ -83,6 +83,13 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 - Today, 7 days, 30 days or all time, for this character or **all characters** on the account,
   with sales, cut, lost deposits, purchases and the **net** along the bottom.
 
+**Craft for profit** (with [mod-retail-professions](https://github.com/buildthehomelab/wow-mod-retail-professions))
+- The RetailProfessions addon's profit view asks this module for prices from the profession
+  window, wherever the player is: the lowest buyout and units listed (their own auctions left
+  out), what the AH bot buyer pays, vendor prices of reagents vendors sell, and how much sold in
+  the last 14 days. It ranks the recipes a player knows by profit, with what they can craft right
+  now from their bags and reagent bank first. `RetailAH.CraftPrices = 0` turns it off.
+
 The window uses [DragonUI](https://github.com/NeticSoul/DragonUI)'s retail art when DragonUI is
 loaded, and a dark retail-style look of its own otherwise. Drag it by the title bar; it stays
 where you put it. `/rah classic` opens the old window, and with it Auctionator, for players who

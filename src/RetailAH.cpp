@@ -69,6 +69,7 @@ namespace RetailAH
         sConfig.levelMargin = std::min<uint32>(sConfigMgr->GetOption<uint32>("RetailAH.LevelGate.Margin", 2), 100);
         sConfig.levelGateItemLevel = sConfigMgr->GetOption<bool>("RetailAH.LevelGate.ItemLevel", true);
         sConfig.classicWindow = sConfigMgr->GetOption<bool>("RetailAH.Gates.ClassicWindow", true);
+        sConfig.craftPrices = sConfigMgr->GetOption<bool>("RetailAH.CraftPrices", true);
         Gate::LoadConfig();
         Appearances::LoadOptions();
         AhBot::LoadConfig();
@@ -214,7 +215,7 @@ namespace RetailAH
 
             uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0)
                 | HELLO_STAT_FILTERS | (AhBot::BuyerEnabled() ? HELLO_BOT_PRICE : 0) | (sConfig.ledger ? HELLO_LEDGER : 0)
-                | HELLO_ITEM_INFO | HELLO_GATES;
+                | HELLO_ITEM_INFO | HELLO_GATES | (sConfig.craftPrices ? HELLO_CRAFT_PRICES : 0);
             // Gates: the player's era (255 = none), the highest level need shown (0 = no level
             // gate) and the stat filters that mean something in that era.
             Gate::View view(player);
@@ -274,6 +275,19 @@ namespace RetailAH
             Context ctx;
             ctx.player = player;
             ctx.req = req;
+
+            // The profession window asks for prices wherever the player is, so this one needs no
+            // auctioneer. A request looks up at most 40 items; half the cost of a search.
+            if (command == "K")
+            {
+                if (!sConfig.craftPrices)
+                    SendError(ctx, "unknown");
+                else if (!TakeToken(sSessions[player->GetGUID().GetCounter()], 0.5f))
+                    SendError(ctx, "busy");
+                else
+                    CraftPrices::HandlePrices(ctx, args);
+                return;
+            }
 
             auto itr = sSessions.find(player->GetGUID().GetCounter());
             Creature* auctioneer = itr != sSessions.end() ? GetAuctioneer(player, itr->second.auctioneer) : nullptr;
@@ -399,6 +413,7 @@ public:
         uint32& /*bidderAccId*/, bool& /*sendNotification*/, bool& /*updateAchievementCriteria*/, bool& /*sendMail*/) override
     {
         Ledger::OnBought(auction);
+        CraftPrices::OnSold(auction);
     }
 
     void OnBeforeAuctionHouseMgrSendAuctionSuccessfulMail(AuctionHouseMgr* /*mgr*/, AuctionEntry* auction, Player* /*owner*/,
@@ -432,6 +447,7 @@ public:
         Appearances::CheckTable();
         AhBot::LoadVendorItems();
         Ledger::CheckTable();
+        CraftPrices::Load();
         Gate::Load();
     }
 };
