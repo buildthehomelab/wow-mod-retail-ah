@@ -120,6 +120,17 @@ RetailAH.Ledger.MaxRows = 300
 
 RetailAH.CraftPrices = 1
 
+#
+#    RetailAH.Tooltip
+#        Description: Answer the RetailAH addon's item tooltip lookups anywhere: what the AH bot
+#                     buyer pays for the item, and what it pays for the materials one disenchant
+#                     gives on average (from disenchant_loot_template, read at startup). Needs
+#                     the AH bot buyer, like RetailAH.BotPrice.
+#        Default:     1
+#
+
+RetailAH.Tooltip = 1
+
 ########################################
 # What players see
 #

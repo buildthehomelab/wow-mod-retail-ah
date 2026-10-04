@@ -396,7 +396,7 @@ local heavyQueue = {}
 local inFlight = {}  -- req -> time sent
 local inFlightCount = 0
 
-local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true, G = true, N = true }
+local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true, G = true, N = true, T = true }
 
 local function send(msg)
 	SendAddonMessage(RAH.PREFIX, msg, "WHISPER", UnitName("player"))
@@ -726,9 +726,16 @@ SlashCmdList.RETAILAH = function (msg)
 		end
 		RAH.Print(RetailAHDB.noCompare and "item tooltips compare with your gear only while you hold Shift."
 			or "item tooltips compare with your equipped gear.")
+	elseif msg == "tooltip" or msg == "tooltip on" or msg == "tooltip off" then
+		local on
+		if msg ~= "tooltip" then on = msg == "tooltip on" end
+		on = RAH.ToggleTooltip(on)
+		RAH.Print(on and "item tooltips show what the AH bot buys an item for, as it is and disenchanted."
+			or "item tooltips no longer show AH bot prices.")
 	else
 		RAH.Print("|cffffd200/rah classic|r or |cffffd200/rah retail|r picks which window opens at the auctioneer. "
 			.. "|cffffd200/rah reset|r moves the window back. "
-			.. "|cffffd200/rah compare|r turns the equipped-gear comparison on hover on or off.")
+			.. "|cffffd200/rah compare|r turns the equipped-gear comparison on hover on or off. "
+			.. "|cffffd200/rah tooltip|r turns the AH bot prices on item tooltips on or off.")
 	end
 end

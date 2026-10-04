@@ -177,8 +177,56 @@ WorldFrame = newObject("Frame", "WorldFrame")
 GameTooltip = newObject("GameTooltip", "GameTooltip")
 ShoppingTooltip1 = newObject("GameTooltip", "ShoppingTooltip1")
 ShoppingTooltip2 = newObject("GameTooltip", "ShoppingTooltip2")
+ItemRefTooltip = newObject("GameTooltip", "ItemRefTooltip")
 local compared = 0
 function GameTooltip_ShowCompareItem() compared = compared + 1 end
+
+-- Just enough of a GameTooltip for the item tooltip lines: lines, the item and its two scripts.
+local function tooltipLine(tip, side, i)
+	local name = tip.__name .. "Text" .. side .. i
+	_G[name] = _G[name] or newObject("FontString", name)
+	return _G[name]
+end
+local function fakeTooltip(tip)
+	tip.__lines = 0
+	function tip:NumLines() return self.__lines end
+	function tip:GetItem() local l = rawget(self, "__link") if l then return "x", l end end
+	function tip:ClearLines()
+		for i = 1, self.__lines do tooltipLine(self, "Left", i):SetText(""); tooltipLine(self, "Right", i):SetText("") end
+		self.__lines, self.__link = 0, nil
+		if self.__scripts.OnTooltipCleared then self.__scripts.OnTooltipCleared(self) end
+	end
+	function tip:AddLine(text) self.__lines = self.__lines + 1; tooltipLine(self, "Left", self.__lines):SetText(text) end
+	function tip:AddDoubleLine(l, r)
+		self:AddLine(l)
+		tooltipLine(self, "Right", self.__lines):SetText(r)
+	end
+	function tip:SetHyperlink(link, ...)
+		self:ClearLines()
+		self.__link = link
+		self:Show()
+		self:AddLine(link)
+		for _, extra in ipairs({ ... }) do self:AddLine(extra) end
+		if self.__scripts.OnTooltipSetItem then self.__scripts.OnTooltipSetItem(self) end
+	end
+	function tip:SetBagItem(bag, slot) self:SetHyperlink(GetContainerItemLink(bag, slot)) end
+	function tip:SetInventoryItem() end
+	function tip:Text()
+		local out = {}
+		for i = 1, self.__lines do
+			table.insert(out, tooltipLine(self, "Left", i):GetText() .. " | " .. tooltipLine(self, "Right", i):GetText())
+		end
+		return table.concat(out, "\n")
+	end
+end
+fakeTooltip(GameTooltip)
+fakeTooltip(ItemRefTooltip)
+function hooksecurefunc(t, name, fn)
+	local old = t[name]
+	t[name] = function (...) local r = { old(...) } fn(...) return table.unpack(r) end
+end
+function GetInventoryItemCount() return 1 end
+ITEM_SOULBOUND = "Soulbound"
 DEFAULT_CHAT_FRAME = { AddMessage = function (_, m) print("  [chat] " .. m) end }
 GameFontHighlightSmall, GameFontNormalSmall = {}, {}
 UIPanelWindows, StaticPopupDialogs, SlashCmdList, UISpecialFrames = {}, {}, {}, {}
@@ -206,6 +254,7 @@ local function reply(msg)
 end
 
 local busyOnce = {}
+local tooltipOld
 local function serve(msg)
 	local cmd, req = msg:match("^([^:]+):([^:]*)")
 	print("  -> " .. msg)
@@ -243,6 +292,17 @@ local function serve(msg)
 		reply("ND:" .. req .. ":" .. table.concat(rows, ";"))
 		reply("NE:" .. req)
 	elseif cmd == "V" then reply("V:" .. req .. ":1234:1800")
+	elseif cmd == "T" then
+		if tooltipOld then reply("ERR:" .. req .. ":far") return end
+		local rows = {}
+		for token in msg:match("^T:%d+:(.*)$"):gmatch("[^,]+") do
+			-- Linen sells to the bot; the shortsword disenchants for more than it sells for,
+			-- at Enchanting 25 the player doesn't have.
+			if token == "2589" then table.insert(rows, "2589,12,0,0,0")
+			elseif token == "15210" then table.insert(rows, "15210,5000,8000,25,1") end
+		end
+		reply("TD:" .. req .. ":" .. table.concat(rows, ";"))
+		reply("TE:" .. req)
 	elseif cmd == "G" then
 		reply("GR:" .. req .. ":50000:2500:300:12000:35200:3:1:2:0")
 		if msg:match("^G:%d+:0:") then
@@ -572,6 +632,51 @@ step("no Classic button; /rah classic switches at once", function ()
 	RetailAHFrame:Show(); RAH.active = true
 end)
 step("close", function () RetailAHFrame:Hide(); fire("AUCTION_HOUSE_CLOSED") end)
+step("item tooltip: AH bot price, stack total, disenchanted value", function ()
+	local sent = 0
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) if m:match("^T:") then sent = sent + 1 end original(p, m, c, t) end
+	GameTooltip:SetBagItem(0, 1)
+	assert(not GameTooltip:Text():find("AH bot"), "line shown before the answer")
+	tick(0.5)
+	local text = GameTooltip:Text()
+	assert(text:find("AH bot buys | 12", 1, true) and text:find("(x20: ", 1, true), "no bot price with stack total:\n" .. text)
+
+	GameTooltip:SetBagItem(0, 3)
+	tick(0.5)
+	text = GameTooltip:Text()
+	assert(text:find("AH bot buys", 1, true) and text:find("Disenchant |cff808080(Enchanting 25)|r | ~", 1, true),
+		"no disenchant line:\n" .. text)
+	print("  " .. text:gsub("\n", "\n  "))
+
+	-- Cached: no new request, lines at once.
+	local before = sent
+	GameTooltip:SetBagItem(0, 2)
+	assert(GameTooltip:Text():find("(x7: ", 1, true), "cached price not shown at once")
+	assert(sent == before, "asked again for a cached item")
+
+	-- Bound copies don't sell on the auction house.
+	ItemRefTooltip:SetHyperlink("item:15210", "Soulbound")
+	text = ItemRefTooltip:Text()
+	assert(not text:find("AH bot buys", 1, true) and text:find("Disenchant", 1, true), "bound item priced:\n" .. text)
+
+	SlashCmdList.RETAILAH("tooltip off")
+	GameTooltip:SetBagItem(0, 1)
+	assert(not GameTooltip:Text():find("AH bot"), "shown although turned off")
+	SlashCmdList.RETAILAH("tooltip")
+	assert(not RetailAHDB.noTooltip, "toggle did not turn it back on")
+
+	-- A module from before tooltips: one refusal, then no more asking this session.
+	tooltipOld = true
+	GameTooltip:SetHyperlink("item:2447")
+	tick(0.5)
+	before = sent
+	GameTooltip:SetHyperlink("item:99991")
+	tick(0.5)
+	assert(sent == before, "kept asking a server without tooltips")
+	tooltipOld = nil
+	SendAddonMessage = original
+end)
 step("module missing", function ()
 	fire("AUCTION_HOUSE_SHOW")
 	outbox = {} -- the server never answers
