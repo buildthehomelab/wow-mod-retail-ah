@@ -70,6 +70,7 @@ namespace RetailAH
         sConfig.levelGateItemLevel = sConfigMgr->GetOption<bool>("RetailAH.LevelGate.ItemLevel", true);
         sConfig.classicWindow = sConfigMgr->GetOption<bool>("RetailAH.Gates.ClassicWindow", true);
         sConfig.craftPrices = sConfigMgr->GetOption<bool>("RetailAH.CraftPrices", true);
+        sConfig.tooltip = sConfigMgr->GetOption<bool>("RetailAH.Tooltip", true);
         Gate::LoadConfig();
         Appearances::LoadOptions();
         AhBot::LoadConfig();
@@ -215,7 +216,8 @@ namespace RetailAH
 
             uint32 flags = (ReagentBank::Enabled() ? HELLO_REAGENT_BANK : 0) | (Appearances::Enabled() ? HELLO_APPEARANCES : 0)
                 | HELLO_STAT_FILTERS | (AhBot::BuyerEnabled() ? HELLO_BOT_PRICE : 0) | (sConfig.ledger ? HELLO_LEDGER : 0)
-                | HELLO_ITEM_INFO | HELLO_GATES | (sConfig.craftPrices ? HELLO_CRAFT_PRICES : 0);
+                | HELLO_ITEM_INFO | HELLO_GATES | (sConfig.craftPrices ? HELLO_CRAFT_PRICES : 0)
+                | (sConfig.tooltip ? HELLO_TOOLTIP : 0);
             // Gates: the player's era (255 = none), the highest level need shown (0 = no level
             // gate) and the stat filters that mean something in that era.
             Gate::View view(player);
@@ -286,6 +288,18 @@ namespace RetailAH
                     SendError(ctx, "busy");
                 else
                     CraftPrices::HandlePrices(ctx, args);
+                return;
+            }
+
+            // Item tooltips, anywhere. Template lookups only, so a quarter of a request.
+            if (command == "T")
+            {
+                if (!sConfig.tooltip)
+                    SendError(ctx, "unknown");
+                else if (!TakeToken(sSessions[player->GetGUID().GetCounter()], 0.25f))
+                    SendError(ctx, "busy");
+                else
+                    Tooltip::HandleValues(ctx, args);
                 return;
             }
 
@@ -448,6 +462,7 @@ public:
         AhBot::LoadVendorItems();
         Ledger::CheckTable();
         CraftPrices::Load();
+        Tooltip::Load();
         Gate::Load();
     }
 };

@@ -90,6 +90,14 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   the last 14 days. It ranks the recipes a player knows by profit, with what they can craft right
   now from their bags and reagent bank first. `RetailAH.CraftPrices = 0` turns it off.
 
+**AH bot prices on item tooltips**
+- Every item tooltip, anywhere in the world, shows what the AH bot buyer pays for it (per unit,
+  plus the stack total in your bags), and for gear what it pays for the materials one disenchant
+  gives on average. The better of the two is green, so you can tell whether to sell an item or
+  disenchant it first. Without enough Enchanting the disenchant line is grey and shows the skill
+  it needs. Bound items show no AH price. `/rah tooltip` turns the lines off;
+  `RetailAH.Tooltip = 0` turns them off for everyone.
+
 The window is built from stock Blizzard frames: the dialog frame with its header plate, tooltip-
 bordered panes, the auction window's own category buttons and column headers, stock buttons,
 checkboxes and scroll bars. With [DragonUI](https://github.com/NeticSoul/DragonUI) loaded it
@@ -291,6 +299,8 @@ mod-realm-config as a **required** addon, so every player gets it. Run that file
 | `RetailAH.LevelGate.Margin` | 2 | How far above the character's level an item may be and still show. |
 | `RetailAH.LevelGate.ItemLevel` | 1 | Judge items without a required level (mats, recipes, bags) by item level. |
 | `RetailAH.Gates.ClassicWindow` | 1 | Filter the classic window's search through the gates too. |
+| `RetailAH.CraftPrices` | 1 | Answer the RetailProfessions profit view's price lookups anywhere. |
+| `RetailAH.Tooltip` | 1 | AH bot prices (as is and disenchanted) on item tooltips, anywhere. |
 
 The era gate also reads mod-individual-progression's `IndividualProgression.Enable`,
 `.ProgressionLimit`, `.RequiredZulGurubProgression`, `.RequiredZulAmanProgression`,
@@ -302,6 +312,7 @@ The era gate also reads mod-individual-progression's `IndividualProgression.Enab
   it as the default; `/rah retail` switches back.
 - `/rah reset` moves the window back to its default spot.
 - `/rah compare` toggles comparing hovered items with your equipped gear (on by default).
+- `/rah tooltip` toggles the AH bot prices on item tooltips (on by default).
 - In the Buy tab, click the selected category again to clear it and search every category.
 
 GM commands on the server:

@@ -66,6 +66,8 @@ namespace RetailAH
         bool classicWindow = true;
         // K: prices for the profession window, asked away from the auctioneer.
         bool craftPrices = true;
+        // T: what the AH bot pays for an item and its disenchanted materials, for tooltips.
+        bool tooltip = true;
     };
 
     // Capability bits in the HELLO answer, so a newer addon can tell what this server offers.
@@ -79,6 +81,7 @@ namespace RetailAH
         HELLO_ITEM_INFO    = 0x20, // N answers item names and levels; HELLO's 5th field stamps them
         HELLO_GATES        = 0x40, // HELLO's 6th-8th fields describe what the player may see
         HELLO_CRAFT_PRICES = 0x80, // K answers prices anywhere (RetailProfessions' profit view)
+        HELLO_TOOLTIP      = 0x100, // T answers bot prices for item tooltips, anywhere
     };
 
     // In place of a bag number: the "slot" field is an item entry, and the units may come from
@@ -346,6 +349,16 @@ namespace RetailAH
         void OnSold(AuctionEntry const* auction);
         // Needs no auctioneer: ctx has only the player and the request id.
         void HandlePrices(Context& ctx, std::vector<std::string_view> const& args);
+    }
+
+    // ---- RetailAHTooltip.cpp: AH bot prices for the addon's item tooltips ---------------------
+
+    namespace Tooltip
+    {
+        // The disenchant tables; at startup.
+        void Load();
+        // Needs no auctioneer: ctx has only the player and the request id.
+        void HandleValues(Context& ctx, std::vector<std::string_view> const& args);
     }
 }
 
