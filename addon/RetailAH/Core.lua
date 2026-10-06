@@ -338,24 +338,42 @@ pollFrame:SetScript("OnUpdate", function (self, elapsed)
 	if arrived then RAH.Fire("ITEM_INFO") end
 end)
 
--- An item's tooltip, with what you have equipped in that slot beside it, like retail's auction
--- house. /rah compare off leaves the comparison to Shift, as elsewhere in the game.
-function RAH.ItemTooltip(owner, link, extra)
-	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
-	GameTooltip:SetHyperlink(link)
-	if extra then extra(GameTooltip) end
-	GameTooltip:Show()
-	if not RetailAHDB.noCompare or IsModifiedClick("COMPAREITEMS") then
-		GameTooltip_ShowCompareItem()
-	end
+-- An item's tooltip. Holding Shift puts what you have equipped in that slot beside it, as
+-- elsewhere in the game; /rah compare shows that on every hover instead.
+local tipOwner
+
+local function wantCompare()
+	return RetailAHDB.alwaysCompare or IsModifiedClick("COMPAREITEMS")
 end
 
-function RAH.HideItemTooltip()
-	GameTooltip:Hide()
+local function hideCompare()
 	ShoppingTooltip1:Hide()
 	ShoppingTooltip2:Hide()
 	if ShoppingTooltip3 then ShoppingTooltip3:Hide() end
 end
+
+function RAH.ItemTooltip(owner, link, extra)
+	tipOwner = owner
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	GameTooltip:SetHyperlink(link)
+	if extra then extra(GameTooltip) end
+	GameTooltip:Show()
+	if wantCompare() then GameTooltip_ShowCompareItem() end
+end
+
+function RAH.HideItemTooltip()
+	tipOwner = nil
+	GameTooltip:Hide()
+	hideCompare()
+end
+
+-- Pressing or letting go of Shift while hovering shows or hides the comparison right away.
+local modifierFrame = CreateFrame("Frame")
+modifierFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
+modifierFrame:SetScript("OnEvent", function ()
+	if not tipOwner or not GameTooltip:IsShown() or not GameTooltip:IsOwned(tipOwner) then return end
+	if wantCompare() then GameTooltip_ShowCompareItem() else hideCompare() end
+end)
 
 function RAH.QualityColor(quality)
 	local c = ITEM_QUALITY_COLORS[quality or 1] or ITEM_QUALITY_COLORS[1]
@@ -720,12 +738,12 @@ SlashCmdList.RETAILAH = function (msg)
 		RAH.Print("window position reset.")
 	elseif msg == "compare" or msg == "compare on" or msg == "compare off" then
 		if msg == "compare" then
-			RetailAHDB.noCompare = not RetailAHDB.noCompare or nil
+			RetailAHDB.alwaysCompare = not RetailAHDB.alwaysCompare or nil
 		else
-			RetailAHDB.noCompare = msg == "compare off" or nil
+			RetailAHDB.alwaysCompare = msg == "compare on" or nil
 		end
-		RAH.Print(RetailAHDB.noCompare and "item tooltips compare with your gear only while you hold Shift."
-			or "item tooltips compare with your equipped gear.")
+		RAH.Print(RetailAHDB.alwaysCompare and "item tooltips compare with your equipped gear on every hover."
+			or "item tooltips compare with your gear only while you hold Shift.")
 	elseif msg == "tooltip" or msg == "tooltip on" or msg == "tooltip off" then
 		local on
 		if msg ~= "tooltip" then on = msg == "tooltip on" end
@@ -735,7 +753,7 @@ SlashCmdList.RETAILAH = function (msg)
 	else
 		RAH.Print("|cffffd200/rah classic|r or |cffffd200/rah retail|r picks which window opens at the auctioneer. "
 			.. "|cffffd200/rah reset|r moves the window back. "
-			.. "|cffffd200/rah compare|r turns the equipped-gear comparison on hover on or off. "
+			.. "|cffffd200/rah compare|r compares hovered items with your gear without Shift, or only with Shift again. "
 			.. "|cffffd200/rah tooltip|r turns the AH bot prices on item tooltips on or off.")
 	end
 end
