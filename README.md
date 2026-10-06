@@ -163,15 +163,21 @@ state from **where it can be obtained**, and takes the easiest source:
    and fishing. Each source gets the state of the map it's spawned on, using the gates IP puts on
    those maps (BWL = 1, AQ = 4, Outland = 8, Northrend = 13, Ulduar = 14, …). A level 64+
    creature standing in the old world counts as TBC, and a level 74+ one as WotLK. Vendors only
-   count for items nothing drops, because the Darkmoon Faire sells Northrend leather and
-   Shattrath sells flour.
+   count for items that nothing else gives (no drop, container, quest or craft). The Darkmoon
+   Faire sells Northrend leather and gem pouches, and Shattrath sells flour.
 2. **Derived sources, followed until they settle.** Container contents, disenchanting,
-   prospecting and milling results. Quest rewards get the quest giver's state and the state of
+   prospecting and milling results, and items made by using another item (a full set of
+   Darkmoon cards makes the deck). Quest rewards get the quest giver's state and the state of
    the items the quest asks for. Crafted items get the easiest place to learn the recipe
    (trainer, recipe item or quest), the state of their reagents, and a **skill tier**: a craft
-   that needs more than 300 skill (vanilla's cap) is TBC, and more than 375 is WotLK.
-3. **Expansion floors.** Required level 61+ counts as TBC and 71+ as WotLK; gear with an item
-   level no vanilla (or TBC) item of that quality ever had is floored the same way.
+   that needs more than 300 skill (vanilla's cap) is TBC, and more than 375 is WotLK. Enchant
+   scrolls (an enchant cast on vellum) and random craft results count as crafts. Crafts learned
+   by research or discovery only date items that nothing else gives.
+3. **Expansion floors.** Required level 61+ counts as TBC and 71+ as WotLK. Gear, gems and ammo
+   with an item level no vanilla (or TBC) item of that quality ever had are floored the same
+   way, and every socket gem is TBC or later. Items needing more than 300 (375) profession
+   skill, recipes included, are TBC (WotLK), and so are flying mounts. A container that holds
+   only floored items gets the easiest of their floors.
 4. **Overrides.** A row in `mod_retail_ah_item_era` (world DB, created at startup) replaces all
    of the above. Rows in mod-ah-progression's old `mod_ah_progression_item` are read too.
 

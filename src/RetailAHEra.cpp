@@ -11,12 +11,18 @@
  *      stands in, using the same gates mod-individual-progression puts on those maps. A creature
  *      of level 64+ (74+) standing in the old world is TBC (WotLK) content all the same: level 70
  *      Scourge Invasion mobs, the level 80 Onyxia's Lair, and so on.
- *      Vendors only count for items nothing drops (see the vendor block below).
+ *      Vendors only count for items nothing else gives (see the vendor block below).
  *   2. Derived sources, iterated until stable: container contents, prospecting / milling /
- *      disenchanting results, quest rewards (gated by the quest giver and the items it asks for)
- *      and crafted items (gated by where the recipe is learned and by the reagents).
- *   3. Floors that apply whatever the sources say: RequiredLevel above 60 / 70, or a gear item
- *      level no vanilla (TBC) item of that quality has, means TBC (WotLK).
+ *      disenchanting results, items made by using another item (Darkmoon decks), quest rewards
+ *      (gated by the quest giver and the items it asks for) and crafted items (gated by where the
+ *      recipe is learned and by the reagents). Crafts include enchant scrolls (an enchant cast on
+ *      vellum) and random results (spell_loot_template). A craft no trainer, recipe or quest
+ *      teaches (research and discoveries) still counts, through its skill rank and reagents, but
+ *      only for items with no other source.
+ *   3. Floors that apply whatever the sources say: RequiredLevel above 60 / 70, a gear, gem or
+ *      ammo item level no vanilla (TBC) item of that quality has, a required profession skill
+ *      over 300 (375) or flying riding skill, means TBC (WotLK). Every socket gem is TBC or
+ *      later. A container holding only floored items gets the easiest of their floors.
  *   4. Override rows replace all of the above (state 0 = always visible): mod_retail_ah_item_era,
  *      and mod-ah-progression's mod_ah_progression_item when it is still there.
  *
@@ -290,8 +296,38 @@ namespace RetailAH::Era
                     category = STATE_PRE_TBC;
             }
 
+            // Raw vanilla gems stop at item level 60; sockets came with TBC, so every gem with
+            // gem properties is TBC or later. Northrend gems: greens cut to 70 (raw 75), the rest 75+.
+            if (proto.Class == ITEM_CLASS_GEM && proto.Quality >= ITEM_QUALITY_NORMAL)
+            {
+                if (proto.ItemLevel >= 75 || (proto.GemProperties && proto.Quality <= ITEM_QUALITY_UNCOMMON && proto.ItemLevel >= 70))
+                    category = std::max<uint8>(category, STATE_TBC_TIER_5);
+                else if (proto.GemProperties || proto.ItemLevel >= 65)
+                    category = std::max<uint8>(category, STATE_PRE_TBC);
+            }
+
+            // Vanilla ammo stops at item level 61 (Miniature Cannon Balls); TBC's tops out at 175.
+            if (proto.Class == ITEM_CLASS_PROJECTILE)
+            {
+                if (proto.ItemLevel >= (proto.Quality <= ITEM_QUALITY_UNCOMMON ? 150u : 180u))
+                    category = std::max<uint8>(category, STATE_TBC_TIER_5);
+                else if (proto.ItemLevel >= 75)
+                    category = std::max<uint8>(category, STATE_PRE_TBC);
+            }
+
             if (category > floor.state)
                 floor = { category, Reason::CategoryFloor, proto.ItemLevel };
+
+            // Recipes and gear that need more skill than the era allows; flying mounts.
+            uint8 skill = STATE_START;
+            if (proto.RequiredSkill == SKILL_RIDING)
+                skill = proto.RequiredSkillRank > 150 ? STATE_PRE_TBC : STATE_START;
+            else if (SkillLineEntry const* skillLine = proto.RequiredSkill ? sSkillLineStore.LookupEntry(proto.RequiredSkill) : nullptr)
+                if (skillLine->categoryId == SKILL_CATEGORY_PROFESSION || skillLine->categoryId == SKILL_CATEGORY_SECONDARY)
+                    skill = SkillTierFloor(proto.RequiredSkillRank);
+
+            if (skill > floor.state)
+                floor = { skill, Reason::SkillFloor, proto.RequiredSkillRank };
 
             return floor;
         }
@@ -454,11 +490,12 @@ namespace RetailAH::Era
             }
 
             // Vendors; a negative item is a reference to another vendor's list. They are only used
-            // for items nothing drops: the Darkmoon Faire and old-world trade vendors also sell
-            // Outland and Northrend goods, and Shattrath / Dalaran vendors sell vanilla ones, so a
-            // vendor says little about when an item arrived.
+            // for items nothing else gives, not even a craft or a container (applied in step 4):
+            // the Darkmoon Faire and old-world trade vendors also sell Outland and Northrend goods
+            // (Heavy Borean Leather, Northrend Mystery Gem Pouch), and Shattrath / Dalaran vendors
+            // sell vanilla ones, so a vendor says little about when an item arrived.
+            std::unordered_map<uint32, Candidate> vendorDirect;
             {
-                std::unordered_map<uint32, Candidate> vendorDirect;
                 std::unordered_map<uint32, std::vector<int32>> vendorRows;
                 if (QueryResult result = WorldDatabase.Query("SELECT entry, item FROM npc_vendor"))
                 {
@@ -493,17 +530,11 @@ namespace RetailAH::Era
                                 Offer(vendorDirect[refItem], state, Reason::Vendor, entry);
                     }
                 }
-
-                for (auto const& [item, candidate] : vendorDirect)
-                {
-                    Candidate& existing = direct[item];
-                    if (!existing.Known())
-                        existing = candidate;
-                }
             }
 
             // ---- 3. Derived sources -------------------------------------------------------------
             std::vector<ContainerEdge> containerEdges;
+            std::unordered_map<uint32, std::vector<uint32>> containerContents; // item_loot_template only
             {
                 LootTable itemLootTable("item_loot_template", refs);
                 LootTable prospectingLootTable("prospecting_loot_template", refs);
@@ -513,11 +544,29 @@ namespace RetailAH::Era
                 for (auto const& [entry, proto] : *items)
                 {
                     auto addEdge = [&, parent = entry](uint32 child) { containerEdges.push_back({ parent, child }); };
-                    itemLootTable.ForEachItem(entry, addEdge);
+                    itemLootTable.ForEachItem(entry, [&, parent = entry](uint32 child)
+                    {
+                        addEdge(child);
+                        containerContents[parent].push_back(child);
+                    });
                     prospectingLootTable.ForEachItem(entry, addEdge);
                     millingLootTable.ForEachItem(entry, addEdge);
                     if (proto.DisenchantID)
                         disenchantLootTable.ForEachItem(proto.DisenchantID, addEdge);
+
+                    // Using the item makes another one (a full set of Darkmoon cards makes the deck).
+                    // Recipes are left out: their spell teaches, it doesn't create.
+                    if (proto.Class == ITEM_CLASS_RECIPE)
+                        continue;
+                    for (_Spell const& itemSpell : proto.Spells)
+                    {
+                        if (itemSpell.SpellId <= 0 || (itemSpell.SpellTrigger != ITEM_SPELLTRIGGER_ON_USE && itemSpell.SpellTrigger != ITEM_SPELLTRIGGER_ON_NO_DELAY_USE))
+                            continue;
+                        if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(uint32(itemSpell.SpellId)))
+                            for (SpellEffectInfo const& effect : spellInfo->GetEffects())
+                                if ((effect.Effect == SPELL_EFFECT_CREATE_ITEM || effect.Effect == SPELL_EFFECT_CREATE_ITEM_2) && effect.ItemType)
+                                    addEdge(effect.ItemType);
+                    }
                 }
             }
 
@@ -691,6 +740,7 @@ namespace RetailAH::Era
             }
 
             std::vector<CraftInfo> crafts;
+            LootTable spellLootTable("spell_loot_template", refs);
             for (uint32 spellId = 1; spellId < sSpellMgr->GetSpellInfoStoreSize(); ++spellId)
             {
                 SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
@@ -721,14 +771,11 @@ namespace RetailAH::Era
                 if (autoLearned)
                     offerSpawn(spellLearnState, spellId, STATE_START);
 
-                for (SpellEffectInfo const& effect : spellInfo->GetEffects())
+                auto addCraft = [&](uint32 item)
                 {
-                    if ((effect.Effect != SPELL_EFFECT_CREATE_ITEM && effect.Effect != SPELL_EFFECT_CREATE_ITEM_2) || !effect.ItemType)
-                        continue;
-
                     CraftInfo craft;
                     craft.spell = spellId;
-                    craft.item = effect.ItemType;
+                    craft.item = item;
                     auto rankItr = spellLearnRank.find(spellId);
                     uint32 rank = rankItr != spellLearnRank.end() ? rankItr->second : abilityRank;
                     craft.skillFloor = cfg.expansionFloors ? SkillTierFloor(rank) : STATE_START;
@@ -736,7 +783,15 @@ namespace RetailAH::Era
                         if (spellInfo->Reagent[i] > 0)
                             craft.reagents.push_back(uint32(spellInfo->Reagent[i]));
                     crafts.push_back(std::move(craft));
-                }
+                };
+
+                // An enchant cast on vellum makes the scroll named in its ItemType.
+                for (SpellEffectInfo const& effect : spellInfo->GetEffects())
+                    if ((effect.Effect == SPELL_EFFECT_CREATE_ITEM || effect.Effect == SPELL_EFFECT_CREATE_ITEM_2 || effect.Effect == SPELL_EFFECT_ENCHANT_ITEM) && effect.ItemType)
+                        addCraft(effect.ItemType);
+
+                // Random results (Darkmoon Card of the North, discoveries).
+                spellLootTable.ForEachItem(spellId, addCraft);
             }
 
             // ---- 4. Iterate derived sources until nothing changes -------------------------------
@@ -749,6 +804,26 @@ namespace RetailAH::Era
                 Candidate floor = Floor(proto);
                 if (floor.state > STATE_START)
                     floors[entry] = floor;
+            }
+
+            // A bag that only ever holds later-era things is later-era itself, wherever it comes
+            // from (the Darkmoon Faire's Northrend Mystery Gem Pouch). Floors only, so this can't
+            // feed back into itself.
+            if (cfg.expansionFloors)
+            {
+                for (auto const& [container, contents] : containerContents)
+                {
+                    Candidate easiest{ UNKNOWN, Reason::ContentsFloor, 0 };
+                    for (uint32 item : contents)
+                    {
+                        auto itr = floors.find(item);
+                        Offer(easiest, itr != floors.end() ? itr->second.state : uint8(STATE_START), Reason::ContentsFloor, item);
+                    }
+
+                    auto own = floors.find(container);
+                    if (easiest.Known() && easiest.state > (own != floors.end() ? own->second.state : uint8(STATE_START)))
+                        floors[container] = easiest;
+                }
             }
 
             auto effective = [&](std::unordered_map<uint32, Candidate> const& values, uint32 item) -> uint8
@@ -776,6 +851,8 @@ namespace RetailAH::Era
             for (; rounds < 12; ++rounds)
             {
                 std::unordered_map<uint32, Candidate> next = direct;
+                // Only for items no world drop, container, quest or taught craft gives.
+                std::unordered_map<uint32, Candidate> fallback = vendorDirect;
 
                 for (ContainerEdge const& edge : containerEdges)
                 {
@@ -812,15 +889,22 @@ namespace RetailAH::Era
                         for (uint32 recipe : recipeItr->second)
                             learn = std::min(learn, effective(values, recipe));
 
-                    // No trainer, recipe or quest teaches it: an unused spell, ignore it.
-                    if (learn == UNKNOWN)
-                        continue;
-
-                    uint8 state = std::max(learn, craft.skillFloor);
+                    // No trainer, recipe or quest teaches it: learned by research or discovery, or
+                    // an unused spell. Its skill rank and reagents still date it, but only as a
+                    // fallback, so an unused spell can't pull a real item down.
+                    bool const taught = learn != UNKNOWN;
+                    uint8 state = std::max(taught ? learn : uint8(STATE_START), craft.skillFloor);
                     for (uint32 reagent : craft.reagents)
                         state = std::max(state, requirement(values, reagent));
 
-                    Offer(next[craft.item], state, Reason::Crafted, craft.spell);
+                    Offer(taught ? next[craft.item] : fallback[craft.item], state, Reason::Crafted, craft.spell);
+                }
+
+                for (auto const& [item, candidate] : fallback)
+                {
+                    Candidate& existing = next[item];
+                    if (!existing.Known())
+                        existing = candidate;
                 }
 
                 bool changed = next.size() != values.size();
@@ -953,7 +1037,9 @@ namespace RetailAH::Era
             case Reason::Container:     return "comes out of item";
             case Reason::Crafted:       return "crafted with spell";
             case Reason::LevelFloor:    return "expansion-era required level";
-            case Reason::CategoryFloor: return "expansion-era gear, item level";
+            case Reason::CategoryFloor: return "expansion-era gear, gem or ammo, item level";
+            case Reason::SkillFloor:    return "expansion-era skill requirement, rank";
+            case Reason::ContentsFloor: return "holds only expansion-era items, such as item";
             default:                    return "?";
         }
     }

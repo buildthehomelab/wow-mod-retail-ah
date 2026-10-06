@@ -172,9 +172,10 @@ RetailAH.EraGate.DeriveFromSources = 1
 
 #
 #    RetailAH.EraGate.ExpansionFloors
-#        Description: Treat items needing level 61+ as TBC and 71+ as WotLK (and gear with an
-#                     item level past what vanilla or TBC had), whatever their sources say. Also
-#                     gates crafts by skill tier: over 300 skill is TBC, over 375 is WotLK.
+#        Description: Treat items needing level 61+ as TBC and 71+ as WotLK (and gear, gems
+#                     and ammo with an item level past what vanilla or TBC had, socket gems and
+#                     flying mounts), whatever their sources say. Also gates crafts, recipes and
+#                     other skill-locked items by skill tier: over 300 is TBC, over 375 is WotLK.
 #                     Jewelcrafting, inscription, prospecting and milling are never gated as
 #                     professions, only by these tiers.
 #        Default:     1

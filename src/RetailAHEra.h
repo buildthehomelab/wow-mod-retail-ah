@@ -57,7 +57,9 @@ namespace RetailAH::Era
         Container,    // item_loot / prospecting / milling / disenchant; source = parent item
         Crafted,      // created by a profession spell (gated by skill tier too); source = spell id
         LevelFloor,   // RequiredLevel above the previous expansion's cap; source = level
-        CategoryFloor // gear whose item level is past the era; source = item level
+        CategoryFloor,// gear, gems or ammo whose item level is past the era; source = item level
+        SkillFloor,   // needs profession skill over 300 (375), or flying; source = skill rank
+        ContentsFloor // opens into nothing but later-era items; source = one of them
     };
 
     struct ItemEra
