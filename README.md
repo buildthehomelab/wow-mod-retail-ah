@@ -22,8 +22,8 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   level (**iLvl**), the level needed to use it (**Req**) and how many are available. Sort by any column. No pages. Gear with random enchantments
   gets a row per suffix ("Bandit Cinch of the Monkey", "... of the Bear"), so searching "monkey"
   finds only the Monkey ones, and opening a row lists only that suffix.
-- Hovering an item **compares it with what you have equipped**, without holding Shift.
-  `/rah compare` turns that off (Shift still compares) and on again.
+- Hold **Shift** while hovering an item to compare it with what you have equipped, as
+  elsewhere in the game. `/rah compare` compares on every hover instead, and back.
 - **Favorites**: right-click a result, or click the star on an item. The window opens on your
   favorites. Favorites are account-wide.
 - **Commodities** (anything that stacks): type a quantity and see the total, filled from the
@@ -311,7 +311,7 @@ The era gate also reads mod-individual-progression's `IndividualProgression.Enab
 - `/rah classic` switches to the old window (right away if you're at the auctioneer) and keeps
   it as the default; `/rah retail` switches back.
 - `/rah reset` moves the window back to its default spot.
-- `/rah compare` toggles comparing hovered items with your equipped gear (on by default).
+- `/rah compare` toggles comparing hovered items with your equipped gear without Shift (off by default).
 - `/rah tooltip` toggles the AH bot prices on item tooltips (on by default).
 - In the Buy tab, click the selected category again to clear it and search every category.
 

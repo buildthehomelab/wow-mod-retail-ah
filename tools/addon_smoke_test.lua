@@ -438,19 +438,30 @@ step("a suffix group links and opens only its suffix", function ()
 	assert(sent and sent:match("^I:%d+:15210:0:%-7$"), "item view did not ask for the suffix: " .. tostring(sent))
 	RAH.Buy.CloseDetail()
 end)
-step("hovering an item compares with equipped gear by default", function ()
+step("hovering an item compares with equipped gear only while Shift is held", function ()
 	local row = find(function (f) return f.__kind == "Button" and rawget(f, "item") and rawget(f, "item").link end)
 	assert(row, "no result row")
 	local before = compared
 	row.__scripts.OnEnter(row)
-	assert(compared == before + 1, "no comparison on hover")
-	row.__scripts.OnLeave(row)
-	SlashCmdList.RETAILAH("compare off")
+	assert(compared == before, "compared without Shift")
+	-- Pressing Shift while hovering compares right away.
+	local isModified, isOwned, isShown = IsModifiedClick, GameTooltip.IsOwned, GameTooltip.IsShown
+	IsModifiedClick = function () return true end
+	GameTooltip.IsOwned = function (tip, owner) return owner == row end
+	GameTooltip.IsShown = function () return true end
+	fire("MODIFIER_STATE_CHANGED", "LSHIFT", 1)
+	assert(compared == before + 1, "no comparison when Shift went down")
 	row.__scripts.OnEnter(row)
-	assert(compared == before + 1, "compared although turned off")
+	assert(compared == before + 2, "no comparison on hover with Shift held")
+	IsModifiedClick, GameTooltip.IsOwned, GameTooltip.IsShown = isModified, isOwned, isShown
 	row.__scripts.OnLeave(row)
 	SlashCmdList.RETAILAH("compare")
-	assert(not RetailAHDB.noCompare, "toggle did not turn it back on")
+	assert(RetailAHDB.alwaysCompare, "toggle did not turn always-compare on")
+	row.__scripts.OnEnter(row)
+	assert(compared == before + 3, "always-compare did not compare without Shift")
+	row.__scripts.OnLeave(row)
+	SlashCmdList.RETAILAH("compare off")
+	assert(not RetailAHDB.alwaysCompare, "compare off did not go back to Shift only")
 end)
 step("repeated search shows cached results at once", function ()
 	RAH.Buy.Search()
