@@ -137,7 +137,30 @@ frame:SetScript("OnShow", function ()
 	OpenAllBags(true)
 end)
 
+-- A 3.3.5 edit box keeps the keyboard until something clears it, so clicking off one of ours
+-- (anywhere: elsewhere in the window, the world, another frame) lets go of it, as retail does.
+local function focusedInputOfOurs()
+	local focus = GetCurrentKeyBoardFocus()
+	local f = focus
+	while f do
+		if f == frame then return focus end
+		f = f:GetParent()
+	end
+end
+
+local mouseWasDown = false
+frame:SetScript("OnUpdate", function ()
+	local down = IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton")
+	if down and not mouseWasDown then
+		local focus = focusedInputOfOurs()
+		if focus and not focus:IsMouseOver() then focus:ClearFocus() end
+	end
+	mouseWasDown = down
+end)
+
 frame:SetScript("OnHide", function ()
+	local focus = focusedInputOfOurs()
+	if focus then focus:ClearFocus() end
 	PlaySound("AuctionWindowClose")
 	StaticPopup_Hide("RETAILAH_CONFIRM")
 	-- Closing the window ends the visit, unless the player is switching to the classic window.
