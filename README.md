@@ -261,6 +261,25 @@ On the server:
   request budget (12 at once, 6 per second), plus an optional search cooldown. The addon waits and
   retries when it runs out; a modified client can't flood the server.
 
+## Requirements
+
+- An AzerothCore WotLK server (`azerothcore-wotlk`, master). The module creates its own tables at
+  startup, so no SQL has to be applied.
+- The bundled **RetailAH** addon (`addon/RetailAH`) on each player's WoW 3.3.5a (12340) client.
+  Without the module on the server, the addon falls back to the classic auction window.
+- Optional, each switches on one part of the window:
+  - [mod-individual-progression](https://github.com/ZhengPeiRu21/mod-individual-progression):
+    the era gate.
+  - [mod-transmog-plus](https://github.com/buildthehomelab/wow-mod-transmog-plus): uncollected
+    appearance tags and filter.
+  - [mod-reagent-bank-account](https://github.com/buildthehomelab/mod-reagent-bank-account):
+    posting from the reagent bank.
+  - [mod-ah-bot-plus](https://github.com/NathanHandley/mod-ah-bot-plus): AH bot prices.
+  - [mod-retail-professions](https://github.com/buildthehomelab/wow-mod-retail-professions):
+    craft-for-profit prices.
+  - [DragonUI](https://github.com/NeticSoul/DragonUI): the window wears its skin.
+- Remove **mod-ah-progression** if it is installed; this module replaces it.
+
 ## Install
 
 ### Server
@@ -344,6 +363,25 @@ GM commands on the server:
   `src/RetailAHTrade.cpp`. Change `PROTOCOL_VERSION` (server) and `RAH.PROTOCOL` (addon)
   together when a message changes shape.
 
+## Troubleshooting
+
+- **Talking to an auctioneer opens the classic window.** The server didn't answer the addon:
+  the module isn't built into the worldserver, or `RetailAH.Enable` is `0`. `/rah classic` also
+  keeps the classic window as the default; `/rah retail` switches back.
+- **An item or auction isn't showing up.** The level gate or the era gate is hiding it. Use
+  `.rah item <id>` to see what holds an item back and `.rah player` to see what a player can
+  see. To override the era, add a row to `mod_retail_ah_item_era` and run `.rah reload`.
+- **The log says RetailAH is leaving the classic search to mod-ah-progression.** That module is
+  still installed and its config is loaded. Remove it from `modules/`.
+- **The addon doesn't load.** The folder must be called `RetailAH` inside `Interface/AddOns`.
+
+## Credits
+
+The AH bot price formula mirrors the one in
+[mod-ah-bot-plus](https://github.com/NathanHandley/mod-ah-bot-plus) by NathanHandley.
+
+Author: [buildthehomelab](https://github.com/buildthehomelab)
+
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
