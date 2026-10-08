@@ -103,6 +103,7 @@ namespace RetailAH::AhBot
             uint32 maxBuyout = 1000000000;
             float acceptable = 1.0f;
             bool preventOverpaying = true;
+            bool skipNoVendorPrice = false;
             bool useSellPrice = true;
 
             float classMultiplier[MAX_ITEM_CLASS] = { };
@@ -399,6 +400,7 @@ namespace RetailAH::AhBot
         s.belowVendorAdd = sConfigMgr->GetOption<float>("AuctionHouseBot.BuyoutBelowVendorVariationAddPercent", 0.25f, false);
         s.acceptable = sConfigMgr->GetOption<float>("AuctionHouseBot.Buyer.AcceptablePriceModifier", 1, false);
         s.preventOverpaying = sConfigMgr->GetOption<bool>("AuctionHouseBot.Buyer.PreventOverpayingForVendorItems", true, false);
+        s.skipNoVendorPrice = sConfigMgr->GetOption<bool>("AuctionHouseBot.Buyer.SkipItemsWithoutVendorPrice", false, false);
         s.useSellPrice = sConfigMgr->GetOption<bool>("AuctionHouseBot.PriceMinimumCenterBase.UseItemSellPriceIfHigher", true, false);
         ParsePairs(s.minimumOverrides, sConfigMgr->GetOption<std::string>("AuctionHouseBot.PriceMinimumCenterBase.OverrideItems", "", false));
 
@@ -456,6 +458,13 @@ namespace RetailAH::AhBot
         // The bot compares a vendor item's whole buyout with what one copy sells to a vendor
         // for: it only ever buys those at vendor price, which isn't worth an auction.
         if (sSettings.preventOverpaying && proto->SellPrice > 0 && sVendorItems.count(proto->ItemId))
+            return false;
+
+        // Buyer.SkipItemsWithoutVendorPrice (buildthehomelab fork): no buy or sell price, apart from
+        // enchanting trade goods and item enhancements, means the bot never buys it.
+        if (sSettings.skipNoVendorPrice && proto->SellPrice == 0 && proto->BuyPrice == 0
+            && !(proto->Class == ITEM_CLASS_TRADE_GOODS && proto->SubClass == ITEM_SUBCLASS_ENCHANTING)
+            && !(proto->Class == ITEM_CLASS_CONSUMABLE && proto->SubClass == ITEM_SUBCLASS_ITEM_ENHANCEMENT))
             return false;
 
         // It buys out when buyout < willing x count, so one copper under the per-unit figure.
