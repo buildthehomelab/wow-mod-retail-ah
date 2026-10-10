@@ -1,5 +1,8 @@
 -- The Buy tab's category tree, retail's order with WotLK's item classes. Each node filters on
 -- item class, subclass and inventory type (nil = any), matched on the server.
+-- Item Enhancement is the exception: enchant scrolls, armor kits and the like are all one class
+-- and subclass with no inventory type, so there the third value is the item class they go on
+-- (2 weapons, 4 armor), which the server reads from their enchanting spell.
 
 local RAH = RetailAH
 
@@ -55,7 +58,7 @@ RAH.CATEGORIES = {
 		node("Green", 3, 4), node("Orange", 3, 5), node("Meta", 3, 6), node("Simple", 3, 7), node("Prismatic", 3, 8),
 	}),
 	node("Item Enhancement", 0, 6, nil, {
-		node("Enchantments", 0, 6), node("Armor Enchantments", 7, 14), node("Weapon Enchantments", 7, 15),
+		node("Weapon Enchantments", 0, 6, 2), node("Armor Enchantments", 0, 6, 4),
 	}),
 	node("Consumables", 0, nil, nil, {
 		node("Food & Drink", 0, 5), node("Potions", 0, 1), node("Elixirs", 0, 2), node("Flasks", 0, 3),
@@ -68,7 +71,8 @@ RAH.CATEGORIES = {
 	}),
 	node("Trade Goods", 7, nil, nil, {
 		node("Cloth", 7, 5), node("Leather", 7, 6), node("Metal & Stone", 7, 7), node("Herbs", 7, 9),
-		node("Elemental", 7, 10), node("Enchanting", 7, 12), node("Jewelcrafting", 7, 4), node("Meat", 7, 8),
+		node("Elemental", 7, 10), node("Enchanting", 7, 12), node("Armor Vellums", 7, 14), node("Weapon Vellums", 7, 15),
+		node("Jewelcrafting", 7, 4), node("Meat", 7, 8),
 		node("Parts", 7, 1), node("Devices", 7, 3), node("Explosives", 7, 2), node("Materials", 7, 13),
 		node("Other", 7, 11),
 	}),

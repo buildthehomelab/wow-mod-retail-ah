@@ -25,6 +25,8 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "Timer.h"
 #include "Util.h"
 #include "WorldSession.h"
@@ -182,13 +184,41 @@ namespace RetailAH
             return false;
         }
 
+        // What an item enhancement (an enchant scroll, an armor kit, a weapon chain) goes on:
+        // ITEM_CLASS_WEAPON or ITEM_CLASS_ARMOR, read from its enchanting spell. Every one of
+        // them is the same item class and subclass, so nothing on the item itself says.
+        // -1 when no spell of the item enchants anything.
+        int32 EnhancementTarget(ItemTemplate const* proto)
+        {
+            for (_Spell const& itemSpell : proto->Spells)
+            {
+                if (itemSpell.SpellId <= 0)
+                    continue;
+                SpellInfo const* spell = sSpellMgr->GetSpellInfo(uint32(itemSpell.SpellId));
+                if (!spell)
+                    continue;
+                for (SpellEffectInfo const& effect : spell->Effects)
+                    if (effect.Effect == SPELL_EFFECT_ENCHANT_ITEM || effect.Effect == SPELL_EFFECT_ENCHANT_ITEM_TEMPORARY
+                        || effect.Effect == SPELL_EFFECT_ENCHANT_ITEM_PRISMATIC)
+                        return spell->EquippedItemClass;
+            }
+            return -1;
+        }
+
         bool MatchesTemplate(Filter const& filter, ItemTemplate const* proto, Player* player)
         {
             if (filter.itemClass >= 0 && proto->Class != uint32(filter.itemClass))
                 return false;
             if (filter.itemSubClass >= 0 && proto->SubClass != uint32(filter.itemSubClass))
                 return false;
-            if (filter.inventoryType >= 0 && proto->InventoryType != uint32(filter.inventoryType))
+            if (filter.itemClass == ITEM_CLASS_CONSUMABLE && filter.itemSubClass == ITEM_SUBCLASS_ITEM_ENHANCEMENT)
+            {
+                // Item enhancements have no inventory type; for them the field asks for what
+                // they go on (the Weapon and Armor Enchantments categories).
+                if (filter.inventoryType >= 0 && EnhancementTarget(proto) != filter.inventoryType)
+                    return false;
+            }
+            else if (filter.inventoryType >= 0 && proto->InventoryType != uint32(filter.inventoryType))
             {
                 // Robes are listed with chests, as in the stock search.
                 if (filter.inventoryType != INVTYPE_CHEST || proto->InventoryType != INVTYPE_ROBE)
@@ -360,6 +390,8 @@ namespace RetailAH
     }
 
     // S:<req>:<flags>[,<stat mask>]:<minLevel>:<maxLevel>:<qualityMask>:<class>:<subclass>:<invType>:<name>
+    // For Item Enhancement (class 0, subclass 6), <invType> is the item class the enhancement goes
+    // on instead: 2 weapons, 4 armor.
     // The stat mask rides on the flags field so the name stays last and may hold ':'. Only a
     // server that says HELLO_STAT_FILTERS gets one.
     // Answer: SR:<req>:<groups>:<truncated>:<locked by level>,<next level>,<locked by era>,<next era>

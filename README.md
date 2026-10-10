@@ -13,6 +13,9 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 - Search box, a **category tree** (weapons by type, armor by material and slot, gems by color,
   glyphs by class, trade goods, recipes by profession, pets, mounts...) and **filters**:
   usable only, exact match, level range, and rarity checkboxes.
+  **Item Enhancement** splits into Weapon Enchantments and Armor Enchantments by what each
+  enchant scroll, armor kit or weapon chain goes on (the game files them all as one kind of
+  item, so the server reads it from the enchant itself); vellums are under Trade Goods.
 - **Stat filters**: tick Agility, Crit, Spell Power, Defense, Sockets and so on in the Filters
   dropdown to see only gear that has **all** of them. The server checks the item's own stats,
   heirloom scaling, "Equip:" bonuses (older items give hit, crit, attack power or spell damage
