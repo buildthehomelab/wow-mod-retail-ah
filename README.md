@@ -26,6 +26,14 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   elsewhere in the game. `/rah compare` compares on every hover instead, and back.
 - **Favorites**: right-click a result, or click the star on an item. The window opens on your
   favorites. Favorites are account-wide.
+- **Shopping list** (with [mod-reagent-bank-account](https://github.com/buildthehomelab/mod-reagent-bank-account)'s
+  ReagentBankUI): the note button beside the star lists what your recipes are short of, put
+  there with **Add to Shopping List** in the profession window, each with what's left to buy,
+  what you've bought, the cheapest price and how many are listed (red when the house can't cover
+  it). Click one and the quantity is already what's left; every purchase counts it down, and an
+  item you've finished drops off. Right-click changes an amount, Shift-right-click removes the
+  item, **Clear List** empties it, and Ctrl+Shift-click on any search result adds that item.
+  When there's something on the list, the window opens on it instead of your favorites.
 - **Commodities** (anything that stacks): type a quantity and see the total, filled from the
   cheapest listings first. **Buy any quantity**: if you want 7 herbs and the cheapest stack has
   20, you buy 7 and the seller keeps the other 13 listed. Click a price row to ask for

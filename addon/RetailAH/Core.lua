@@ -574,6 +574,93 @@ local function quietFilter(self, event, msg)
 end
 
 -----------------------------------------
+-- the shopping list: ReagentBankUI keeps it (what recipes are short of, put there from the
+-- profession window), the Buy tab lists it and reports what gets bought
+
+local Shopping = {}
+RAH.Shopping = Shopping
+
+local function shoppingBank()
+	local RB = _G.ReagentBankUI
+	if RB and RB.GetShoppingListMap and RB.RecordShoppingPurchase then return RB end
+end
+
+function Shopping.Available()
+	return shoppingBank() ~= nil
+end
+
+-- { { entry, need = units left to buy, bought = units bought so far } }
+function Shopping.Items()
+	local RB = shoppingBank()
+	local items = {}
+	if not RB then return items end
+	local bought = RB.GetShoppingBoughtMap and RB:GetShoppingBoughtMap() or {}
+	for key, amount in pairs(RB:GetShoppingListMap()) do
+		local entry, need = tonumber(key), tonumber(amount) or 0
+		if entry and need > 0 then
+			table.insert(items, { entry = entry, need = need, bought = tonumber(bought[entry]) or 0 })
+		end
+	end
+	table.sort(items, function (a, b) return a.entry < b.entry end)
+	return items
+end
+
+-- Units of an item left to buy; 0 when it isn't on the list.
+function Shopping.Need(entry)
+	local RB = shoppingBank()
+	return RB and tonumber(RB:GetShoppingListMap()[entry]) or 0
+end
+
+-- A purchase went through: ReagentBankUI counts it off the list.
+function Shopping.Bought(entry, count)
+	local RB = shoppingBank()
+	if RB and Shopping.Need(entry) > 0 then pcall(RB.RecordShoppingPurchase, RB, entry, count) end
+	RAH.Fire("SHOPPING")
+end
+
+function Shopping.Remove(entry)
+	local RB = shoppingBank()
+	if RB and RB.RemoveShoppingListItem then pcall(RB.RemoveShoppingListItem, RB, entry) end
+	RAH.Fire("SHOPPING")
+end
+
+-- ReagentBankUI's "how many?" popup: puts an item on the list, or changes its amount (0 takes
+-- it off).
+function Shopping.Edit(entry)
+	local RB = shoppingBank()
+	if RB and RB.ShowShoppingAmountPopup then pcall(RB.ShowShoppingAmountPopup, RB, entry) end
+end
+
+function Shopping.Clear()
+	local RB = shoppingBank()
+	if RB and RB.ClearShoppingList then pcall(RB.ClearShoppingList, RB) end
+	RAH.Fire("SHOPPING")
+end
+
+-- ReagentBankUI's own floating list belongs to the Blizzard window: it stays away while this
+-- window is the one in use, and comes back with the classic one.
+local function floatingShoppingList(show)
+	local RB = _G.ReagentBankUI
+	if not RB then return end
+	if show and RB.ShowAuctionShoppingFrame then
+		pcall(RB.ShowAuctionShoppingFrame, RB)
+	elseif not show and RB.HideAuctionShoppingFrame then
+		pcall(RB.HideAuctionShoppingFrame, RB, false)
+	end
+end
+
+local function registerShoppingView()
+	local RB = _G.ReagentBankUI
+	if not (RB and RB.RegisterShoppingListView) then return end
+	RB:RegisterShoppingListView({
+		name = "RetailAH",
+		IsActive = function () return RAH.active end,
+		Refresh = function () RAH.Fire("SHOPPING") end,
+		Search = function (entry) return RAH.Buy.OpenEntry(entry) end,
+	})
+end
+
+-----------------------------------------
 -- taking over from the Blizzard window
 
 RAH.active = false       -- our window is the one in use for this visit
@@ -588,6 +675,7 @@ local function showClassic()
 	RAH.active = false
 	AuctionFrame_LoadUI()
 	if AuctionFrame_Show then AuctionFrame_Show() end
+	floatingShoppingList(true)
 end
 RAH.ShowClassic = showClassic
 
@@ -642,6 +730,10 @@ local function onAuctionHouseShow()
 	RAH.serverReady = false
 	RAH.auctioneer = UnitGUID("npc")
 	RetailAHFrame:Show()
+	-- Whichever addon hears about the visit first: now, and once more for a ReagentBankUI that
+	-- shows its list after this without asking.
+	floatingShoppingList(false)
+	RAH.After(0.05, function () if RAH.active then floatingShoppingList(false) end end)
 
 	helloTimer = helloTimer + 1
 	local myTimer = helloTimer
@@ -697,6 +789,8 @@ events:SetScript("OnEvent", function (self, event, ...)
 
 		-- Auctionator answers every auction-house visit and expects the Blizzard window to exist.
 		if IsAddOnLoaded("Auctionator") then AuctionFrame_LoadUI() end
+
+		registerShoppingView()
 
 		for _, name in ipairs({ "ERR_AUCTION_STARTED", "ERR_AUCTION_REMOVED", "ERR_AUCTION_BID_PLACED", "ERR_AUCTION_WON" }) do
 			if _G[name] then QUIET[_G[name]] = true end

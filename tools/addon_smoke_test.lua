@@ -45,7 +45,15 @@ end
 function methods:Show() local was = self.__shown; self.__shown = true; if not was and self.__scripts.OnShow then self.__scripts.OnShow(self) end end
 function methods:Hide() local was = self.__shown; self.__shown = false; if was and self.__scripts.OnHide then self.__scripts.OnHide(self) end end
 function methods:IsShown() return self.__shown end
-function methods:IsVisible() return self.__shown end
+-- Shown, and so is everything it sits in, as in the game.
+function methods:IsVisible()
+	local f = self
+	while f do
+		if not rawget(f, "__shown") then return false end
+		f = rawget(f, "__parent")
+	end
+	return true
+end
 function methods:SetText(t) self.__text = t == nil and "" or tostring(t) end
 function methods:GetText() return self.__text end
 function methods:GetNumber() return tonumber(self.__text) or 0 end
@@ -104,11 +112,37 @@ function PanelTemplates_SetTab() end
 function PanelTemplates_SetNumTabs() end
 function PanelTemplates_TabResize() end
 function PlaySound() end
+function IsMouseButtonDown() return false end
+function GetCurrentKeyBoardFocus() return nil end
+
+-- ReagentBankUI, as far as we use it: it keeps the shopping list and has a floating list of
+-- its own for the Blizzard window.
+local rbView, rbFloating
+ReagentBankUI = {
+	list = {}, bought = {},
+	GetShoppingListMap = function (self) return self.list end,
+	GetShoppingBoughtMap = function (self) return self.bought end,
+	RecordShoppingPurchase = function (self, entry, count)
+		local left = (self.list[entry] or 0) - count
+		self.list[entry] = left > 0 and left or nil
+		self.bought[entry] = left > 0 and (self.bought[entry] or 0) + count or nil
+		if rbView then rbView.Refresh() end
+	end,
+	RemoveShoppingListItem = function (self, entry)
+		self.list[entry], self.bought[entry] = nil, nil
+		if rbView then rbView.Refresh() end
+	end,
+	ClearShoppingList = function (self) self.list, self.bought = {}, {} end,
+	RegisterShoppingListView = function (self, view) rbView = view end,
+	ShowAuctionShoppingFrame = function () rbFloating = true end,
+	HideAuctionShoppingFrame = function () rbFloating = false end,
+}
 function SetPortraitTexture() end
 function OpenAllBags() end
 function IsAddOnLoaded() return false end
 function IsModifiedClick() return false end
 function IsShiftKeyDown() return false end
+function IsControlKeyDown() return false end
 function CursorHasItem() return false end
 function GetCursorInfo() return nil end
 function ClearCursor() end
@@ -271,7 +305,10 @@ local function serve(msg)
 		reply("CR:" .. req .. ":2589"); reply("CD:" .. req .. ":10,20,0;13,27,7"); reply("CE:" .. req)
 	elseif cmd == "I" then
 		reply("IR:" .. req .. ":15210:2"); reply("ID:" .. req .. ":101,1,3000,3150,45000,7200,4,-7,55;102,1,0,5000,0,600,1,0,0"); reply("IE:" .. req)
-	elseif cmd == "Q" then reply("QR:" .. req .. ":2589:5:50:0")
+	elseif cmd == "Q" then
+		-- Whatever is asked for is there, at 10c each.
+		local qty = tonumber(msg:match("^Q:[^:]*:%d+:(%d+)"))
+		reply("QR:" .. req .. ":2589:" .. qty .. ":" .. qty * 10 .. ":0")
 	elseif cmd == "B" then reply("BR:" .. req .. ":ok:5:50:5:50")
 	elseif cmd == "P" then
 		local id, price = msg:match("^P:[^:]*:(%d+):(%d+)")
@@ -548,6 +585,50 @@ step("item info from the server, saved across sessions", function ()
 	assert(not RetailAHDB.items["99991"], "new stamp kept the old cache")
 end)
 step("favorites", function () RAH.SetFavorite(2589, true); RAH.Buy.ShowFavorites() end)
+local function shown(kind, text)
+	return find(function (f) return f.__kind == kind and f.__text == text and f:IsVisible() end)
+end
+step("shopping list: ReagentBankUI's floating list stays away", function ()
+	assert(rbView and rbView.IsActive(), "not registered as the shopping list's view")
+	assert(rbFloating == false, "the floating list wasn't sent away")
+end)
+step("shopping list: listed with what's left to buy", function ()
+	ReagentBankUI.list[2589], ReagentBankUI.bought[2589] = 12, 3
+	RAH.Buy.ShowShopping()
+	tick(0.5)
+	assert(shown("FontString", "12") and shown("FontString", "|cff20ff203|r"), "need and bought not listed")
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("^12 left to buy") and f:IsVisible() end),
+		"no summary under the list")
+	assert(shown("Button", "Clear List"), "no Clear List")
+end)
+step("shopping list: opening an item starts at what's left, buying counts it off", function ()
+	rbView.Search(2589)
+	tick(1)
+	assert(shown("EditBox", "12"), "quantity didn't start at what's left to buy")
+	local buy = find(function (f) return f.__kind == "Button" and f.__text == "Buy Now" and f.__enabled and f:IsVisible() end)
+	assert(buy, "Buy Now not ready")
+	buy.__scripts.OnClick(buy)
+	lastPopup.data()
+	tick(0.5)
+	-- The fake server sells 5.
+	assert(ReagentBankUI.list[2589] == 7 and ReagentBankUI.bought[2589] == 8, "purchase not counted off the list")
+	assert(shown("EditBox", "7"), "quantity didn't follow what's left")
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("Shopping list: |cffffffff7|r to buy") end),
+		"the item view doesn't say what's left")
+end)
+step("shopping list: back to the list, right-click takes an item off", function ()
+	local back = shown("Button", "< Back")
+	back.__scripts.OnClick(back)
+	tick(0.5)
+	assert(shown("FontString", "7"), "the list didn't come back with the new count")
+	RAH.Shopping.Remove(2589)
+	tick(0.5)
+	assert(find(function (f) return f.__kind == "FontString" and f.__text:find("^Your shopping list is empty") and f:IsVisible() end),
+		"the empty list doesn't say so")
+	RAH.Buy.ShowFavorites()
+	tick(0.5)
+	assert(not shown("Button", "Clear List"), "the shopping list stayed over the favorites")
+end)
 step("sell tab", function () RAH.SelectTab(2) end)
 step("select commodity", function () RAH.Sell.Select(0, 1) end)
 step("post", function ()
@@ -638,6 +719,7 @@ step("no Classic button; /rah classic switches at once", function ()
 	SlashCmdList.RETAILAH("classic")
 	AuctionFrame_Show = original
 	assert(shown and not RAH.active, "didn't switch to the classic window")
+	assert(rbFloating, "ReagentBankUI's floating list didn't come back with the classic window")
 	SlashCmdList.RETAILAH("retail")
 	assert(not RetailAHDB.classic, "retail not saved")
 	RetailAHFrame:Show(); RAH.active = true

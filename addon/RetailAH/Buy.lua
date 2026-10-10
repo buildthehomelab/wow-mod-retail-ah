@@ -1,9 +1,10 @@
 -- Buy tab: search bar, filters, categories, grouped results and the two item views retail has:
 -- commodities (buy any quantity at the cheapest prices) and everything else (pick an auction).
+-- With ReagentBankUI, its shopping list (what recipes are short of) is a view here too.
 
 local RAH = RetailAH
 
-local panel = RAH.AddTab("Buy")
+local panel, tabIndex = RAH.AddTab("Buy")
 local STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
 local STAR_INLINE = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:12:12:0:0|t "
 -- Transmog pink, as retail uses for appearances.
@@ -16,7 +17,7 @@ RAH.Buy = Buy
 local state = {
 	name = "",
 	node = nil,       -- selected category
-	lastQuery = nil,  -- "search" or "favorites"
+	lastQuery = nil,  -- "search", "favorites" or "shopping"
 	results = {},
 	searchReq = nil,
 	detail = nil,     -- the group being looked at
@@ -41,8 +42,23 @@ favButton:SetScript("OnEnter", function (self)
 end)
 favButton:SetScript("OnLeave", function () GameTooltip:Hide() end)
 
-local searchBox = RAH.CreateEditBox(panel, 330)
-searchBox:SetPoint("LEFT", favButton, "RIGHT", 12, 0)
+-- The shopping list, when ReagentBankUI is there to keep one.
+local shopButton = RAH.CreateIconButton(panel, "Interface\\Icons\\INV_Misc_Note_01", 22)
+shopButton:SetPoint("LEFT", favButton, "RIGHT", 6, 0)
+shopButton.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+shopButton.count = shopButton:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+shopButton.count:SetPoint("BOTTOMRIGHT", shopButton, "BOTTOMRIGHT", 2, -2)
+shopButton:SetScript("OnEnter", function (self)
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:AddLine("Shopping list")
+	GameTooltip:AddLine("What your recipes are short of. Add to it from the profession window; it counts down as you buy.", 1, 1, 1, true)
+	GameTooltip:Show()
+end)
+shopButton:SetScript("OnLeave", function () GameTooltip:Hide() end)
+if not RAH.Shopping.Available() then shopButton:Hide() end
+
+local searchBox = RAH.CreateEditBox(panel, RAH.Shopping.Available() and 302 or 330)
+searchBox:SetPoint("LEFT", RAH.Shopping.Available() and shopButton or favButton, "RIGHT", 12, 0)
 searchBox:SetMaxLetters(60)
 local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 placeholder:SetPoint("LEFT", searchBox, "LEFT", 2, 0)
@@ -495,6 +511,8 @@ local results = RAH.CreateList(resultsPane, {
 	onClick = function (g, button)
 		if button == "RightButton" then
 			RAH.SetFavorite(g.entry, not RAH.IsFavorite(g.entry))
+		elseif IsControlKeyDown() and IsShiftKeyDown() and RAH.Shopping.Available() then
+			RAH.Shopping.Edit(g.entry)
 		elseif IsModifiedClick("CHATLINK") then
 			local info = RAH.Item(g.link)
 			if info then ChatEdit_InsertLink(info.link) end
@@ -509,6 +527,9 @@ local results = RAH.CreateList(resultsPane, {
 		if isUncollected(g) then tip:AddLine(UNCOLLECTED_TIP, 1, 0.5, 1) end
 		tip:AddLine(" ")
 		tip:AddLine("Right-click to " .. (RAH.IsFavorite(g.entry) and "remove from" or "add to") .. " favorites", 0.5, 0.8, 1)
+		if RAH.Shopping.Available() then
+			tip:AddLine("Ctrl+Shift-click to put it on your shopping list", 0.5, 0.8, 1)
+		end
 	end,
 	empty = "Search for items, or pick a category.",
 })
@@ -558,14 +579,19 @@ lockedHover:SetScript("OnLeave", function () GameTooltip:Hide() end)
 -- stats: the stat mask the rows were searched with, so opening one lists only the copies that
 -- have those stats.
 -- locked: parseLocked's answer, or nil.
+-- A row of a search, favorites or shopping answer.
+local function toGroup(r, order, stats)
+	-- r[6], r[7]: the suffix of a group that search split by suffix ("of the Monkey").
+	return {
+		entry = r[1], price = r[2], units = r[3], auctions = r[4], flags = r[5], order = order, stats = stats,
+		randomProperty = r[6] or 0, link = RAH.ItemString(r[1], r[6], r[7]),
+	}
+end
+
 local function showResults(rows, truncated, emptyText, keepScroll, stats, locked)
 	state.results = {}
 	for i, r in ipairs(rows) do
-		-- r[6], r[7]: the suffix of a group that search split by suffix ("of the Monkey").
-		table.insert(state.results, {
-			entry = r[1], price = r[2], units = r[3], auctions = r[4], flags = r[5], order = i, stats = stats,
-			randomProperty = r[6] or 0, link = RAH.ItemString(r[1], r[6], r[7]),
-		})
+		table.insert(state.results, toGroup(r, i, stats))
 	end
 	if not emptyText and locked and #rows == 0 then
 		emptyText = "Nothing you can see yet: " .. lockedText(locked) .. "."
@@ -600,6 +626,7 @@ function Buy.Search()
 	filters:Hide()
 	searchBox:ClearFocus()
 	state.lastQuery = "search"
+	Buy.ShowList()
 	local f = RetailAHDB.filters
 	local flags = (f.usable and 1 or 0) + (f.exact and 2 or 0) + ((f.uncollected and RAH.appearances) and 4 or 0)
 	local mask = 0
@@ -645,10 +672,12 @@ function Buy.ShowFavorites()
 	if not RAH.serverReady then return end
 	Buy.CloseDetail()
 	state.lastQuery = "favorites"
+	Buy.ShowList()
 	state.node = nil
 	refreshCategories()
 	local favs = RAH.Favorites()
 	if #favs == 0 then
+		state.searchReq = nil
 		showResults({}, false, "No favorites yet. Right-click a result, or click the star on an item, to add one.")
 		return
 	end
@@ -678,6 +707,153 @@ searchBox:SetScript("OnEnterPressed", function (self) self:ClearFocus(); Buy.Sea
 favButton:SetScript("OnClick", function () Buy.ShowFavorites() end)
 
 -----------------------------------------
+-- shopping list: every item on it with what's left to buy, in place of the results
+
+local SHOP_FOOTER = 30
+
+local function isCommodity(g)
+	return bit.band(g.flags or 0, RAH.GROUP_COMMODITY) ~= 0
+end
+
+local shopping = RAH.CreateList(resultsPane, {
+	rows = 19,
+	columns = {
+		{ title = "Price", width = 140, align = "RIGHT", defaultDesc = false,
+			text = function (g) return g.auctions > 0 and RAH.Money(g.price) or "|cff808080--|r" end,
+			sort = function (g) return g.auctions > 0 and g.price or math.huge end },
+		{ title = "Name", icon = function (g) return itemIcon(g.entry) end,
+			text = function (g) return itemName(g) end,
+			sort = function (g) return sortName(g.link) end },
+		{ title = "To Buy", width = 70, align = "RIGHT", defaultDesc = true,
+			text = function (g) return RAH.Number(g.need) end,
+			sort = function (g) return g.need end },
+		{ title = "Bought", width = 70, align = "RIGHT", defaultDesc = true,
+			text = function (g) return g.bought > 0 and ("|cff20ff20" .. RAH.Number(g.bought) .. "|r") or "" end,
+			sort = function (g) return g.bought end },
+		-- Red when the house can't cover what's left.
+		{ title = "Available", width = 100, align = "RIGHT", defaultDesc = true,
+			text = function (g)
+				local n = isCommodity(g) and g.units or g.auctions
+				return (n < g.need and "|cffff2020" or "") .. RAH.Number(n) .. (n < g.need and "|r" or "")
+			end,
+			sort = function (g) return isCommodity(g) and g.units or g.auctions end },
+	},
+	defaultSort = 2,
+	link = function (g) return g.link end,
+	onClick = function (g, button)
+		if button == "RightButton" then
+			if IsShiftKeyDown() then RAH.Shopping.Remove(g.entry) else RAH.Shopping.Edit(g.entry) end
+		elseif IsModifiedClick("CHATLINK") then
+			local info = RAH.Item(g.link)
+			if info then ChatEdit_InsertLink(info.link) end
+		elseif g.auctions > 0 then
+			Buy.OpenDetail(g)
+		else
+			RAH.Status("None are listed right now.", true)
+		end
+	end,
+	tooltipExtra = function (g, tip)
+		tip:AddLine(" ")
+		tip:AddLine("Click to buy what's left", 0.5, 0.8, 1)
+		tip:AddLine("Right-click to change the amount, Shift-right-click to take it off the list", 0.5, 0.8, 1)
+	end,
+	empty = "Your shopping list is empty.",
+})
+shopping:SetPoint("TOPLEFT", resultsPane, "TOPLEFT", 4, -4)
+shopping:SetPoint("BOTTOMRIGHT", resultsPane, "BOTTOMRIGHT", -4, 4 + SHOP_FOOTER)
+shopping:Hide()
+
+local shopFooter = CreateFrame("Frame", nil, resultsPane)
+shopFooter:SetPoint("BOTTOMLEFT", resultsPane, "BOTTOMLEFT", 10, 6)
+shopFooter:SetPoint("BOTTOMRIGHT", resultsPane, "BOTTOMRIGHT", -10, 6)
+shopFooter:SetHeight(SHOP_FOOTER - 6)
+shopFooter:Hide()
+
+local shopClear = RAH.CreateButton(shopFooter, "Clear List", 100, 22)
+shopClear:SetPoint("RIGHT", shopFooter, "RIGHT", 0, 0)
+shopClear:SetScript("OnClick", function ()
+	RAH.Confirm("Take everything off your shopping list?", function () RAH.Shopping.Clear() end)
+end)
+
+local shopSummary = shopFooter:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+shopSummary:SetPoint("LEFT", shopFooter, "LEFT", 0, 0)
+shopSummary:SetPoint("RIGHT", shopClear, "LEFT", -10, 0)
+shopSummary:SetJustifyH("LEFT")
+
+local function updateShopButton()
+	if not RAH.Shopping.Available() then return end
+	local n = #RAH.Shopping.Items()
+	shopButton.count:SetText(n > 0 and n or "")
+	shopButton.icon:SetDesaturated(n == 0)
+	shopButton.icon:SetAlpha(n > 0 and 1 or 0.6)
+end
+
+-- rows: the favorites lookup's answer for the entries in `items` (RAH.Shopping.Items()).
+local function showShopping(items, rows, keepScroll)
+	local byEntry = {}
+	for i, r in ipairs(rows) do byEntry[r[1]] = toGroup(r, i) end
+	local list, entries, units, cost = {}, {}, 0, 0
+	for i, item in ipairs(items) do
+		-- An item the server doesn't answer for (hidden from this character) still shows, unlisted.
+		local g = byEntry[item.entry] or toGroup({ item.entry, 0, 0, 0, 0 }, #rows + i)
+		g.need, g.bought = item.need, item.bought
+		table.insert(list, g)
+		table.insert(entries, g.link)
+		units = units + item.need
+		-- A rough total: the cheapest price for all of it, where there's a price per unit.
+		if isCommodity(g) and g.auctions > 0 then cost = cost + g.price * item.need end
+	end
+	shopping:SetEmptyText("Your shopping list is empty.\n\nIn the profession window, pick a recipe and an amount, "
+		.. "then Add to Shopping List.")
+	shopping:SetItems(list, keepScroll)
+	RAH.Prefetch(entries)
+	resultCount:SetText(#list == 0 and "" or (#list == 1 and "1 item to buy" or (#list .. " items to buy")))
+	lockedHover:Hide()
+	local text = #list == 0 and "" or (RAH.Number(units) .. " left to buy")
+	if cost > 0 then text = text .. "  |cffa0a0a0from about|r " .. RAH.Money(cost) end
+	shopSummary:SetText(text)
+	RAH.SetEnabled(shopClear, #list > 0)
+	updateShopButton()
+end
+
+function Buy.ShowShopping(keepScroll)
+	if not (RAH.serverReady and RAH.Shopping.Available()) then return end
+	Buy.CloseDetail()
+	filters:Hide()
+	state.lastQuery = "shopping"
+	Buy.ShowList()
+	state.node = nil
+	refreshCategories()
+	local items = RAH.Shopping.Items()
+	RAH.CancelQueuedSearches()
+	local token = {}
+	state.searchReq = token
+	if #items == 0 then
+		showShopping(items, {}, keepScroll)
+		return
+	end
+
+	-- The server takes up to 30 per request.
+	if not keepScroll then resultCount:SetText("Loading your shopping list...") end
+	local rows, pendingChunks = {}, 0
+	for i = 1, #items, 30 do
+		local chunk = {}
+		for j = i, math.min(i + 29, #items) do table.insert(chunk, items[j].entry) end
+		pendingChunks = pendingChunks + 1
+		RAH.Request("F", { table.concat(chunk, ",") }, function (result, err)
+			if state.searchReq ~= token then return end
+			if result then
+				for _, r in ipairs(result.rows) do table.insert(rows, r) end
+			end
+			pendingChunks = pendingChunks - 1
+			if pendingChunks == 0 then showShopping(items, rows, keepScroll) end
+		end)
+	end
+end
+
+shopButton:SetScript("OnClick", function () Buy.ShowShopping() end)
+
+-----------------------------------------
 -- item detail (shared top bar)
 
 local detail = RAH.CreateInset(panel)
@@ -689,7 +865,11 @@ detail:Hide()
 
 local back = RAH.CreateButton(detail, "< Back", 70, 22)
 back:SetPoint("TOPLEFT", detail, "TOPLEFT", 8, -8)
-back:SetScript("OnClick", function () Buy.CloseDetail() end)
+back:SetScript("OnClick", function ()
+	Buy.CloseDetail()
+	-- Something was probably bought: what's left and the prices have changed.
+	if state.lastQuery == "shopping" then Buy.ShowShopping(true) end
+end)
 
 local detailIcon = RAH.CreateItemButton(detail, 34)
 detailIcon:SetPoint("LEFT", back, "RIGHT", 12, -6)
@@ -745,11 +925,13 @@ tallyLabel:SetJustifyH("RIGHT")
 
 local function updateTally()
 	local t = state.tally
+	local parts = {}
+	local need = state.detail and RAH.Shopping.Need(state.detail.entry) or 0
+	if need > 0 then table.insert(parts, "Shopping list: |cffffffff" .. RAH.Number(need) .. "|r to buy") end
 	if t.count > 0 then
-		tallyLabel:SetText("Purchased: |cffffffff" .. RAH.Number(t.count) .. "|r for " .. RAH.Money(t.spent))
-	else
-		tallyLabel:SetText("")
+		table.insert(parts, "Purchased: |cffffffff" .. RAH.Number(t.count) .. "|r for " .. RAH.Money(t.spent))
 	end
+	tallyLabel:SetText(table.concat(parts, "    "))
 end
 
 local function addToTally(count, spent)
@@ -888,6 +1070,15 @@ qtyBox:SetScript("OnTextChanged", updateQuote)
 
 local loadDetail
 
+-- Counts a purchase off the shopping list. An item still on it afterwards gets what's left as
+-- the next quantity.
+local function boughtForList(g, count)
+	if count <= 0 or RAH.Shopping.Need(g.entry) <= 0 then return end
+	RAH.Shopping.Bought(g.entry, count)
+	local left = RAH.Shopping.Need(g.entry)
+	if left > 0 and state.detail == g then qtyBox:SetText(tostring(left)) end
+end
+
 buyNow:SetScript("OnClick", function ()
 	local g, q = state.detail, state.quote
 	if not (g and q and q.found >= q.quantity) then return end
@@ -902,8 +1093,10 @@ buyNow:SetScript("OnClick", function ()
 			if status == "ok" then
 				RAH.Status("Bought " .. RAH.Number(bought) .. " for " .. RAH.Money(spent) .. ". It's in your mailbox.")
 				PlaySound("LOOTWINDOWCOINSOUND")
+				boughtForList(g, bought)
 				addToTally(bought, spent)
 			elseif status == "partial" then
+				boughtForList(g, bought)
 				addToTally(bought, spent)
 				RAH.Status("Bought " .. RAH.Number(bought) .. " of " .. RAH.Number(q.quantity) .. " for " .. RAH.Money(spent) .. ".", true)
 			elseif status == "price" then
@@ -1040,6 +1233,7 @@ end
 
 local function placeBid(a, price, verb, skipConfirm)
 	local info = RAH.Item(a.link)
+	local g = state.detail
 	local text = string.format("%s %s for %s?", verb, info and info.link or "this item", RAH.Money(price))
 	local function go()
 		RAH.SetEnabled(buyoutButton, false)
@@ -1049,6 +1243,7 @@ local function placeBid(a, price, verb, skipConfirm)
 			if status == "bought" then
 				RAH.Status("Bought " .. (info and info.link or "the item") .. ". It's in your mailbox.")
 				PlaySound("LOOTWINDOWCOINSOUND")
+				if g then boughtForList(g, a.count) end
 				addToTally(a.count, price)
 				state.pickNext = true
 			elseif status == "bid" then
@@ -1170,13 +1365,14 @@ function Buy.OpenDetail(g)
 	state.stacks = false
 	updateTally()
 	tiers:SetItems({})
-	qtyBox:SetText("1")
+	-- An item on the shopping list starts at what's left to buy.
+	local need = RAH.Shopping.Need(g.entry)
+	qtyBox:SetText(tostring(need > 0 and need or 1))
 	auctions:SetItems({})
 	bidInput:SetCopper(0)
 	showDetailMode(g)
-	-- The results sit under the item view; without DragonUI's opaque panes they'd show through.
-	results:Hide()
 	detail:Show()
+	Buy.ShowList()
 	loadDetail()
 end
 
@@ -1184,7 +1380,29 @@ function Buy.CloseDetail()
 	state.detail = nil
 	state.detailReq = nil
 	detail:Hide()
-	results:Show()
+	Buy.ShowList()
+end
+
+-- What fills the pane: the shopping list or the results. Neither under the item view: without
+-- DragonUI's opaque panes they'd show through.
+function Buy.ShowList()
+	local open = not detail:IsShown()
+	local shop = state.lastQuery == "shopping"
+	if open and shop then shopping:Show(); shopFooter:Show() else shopping:Hide(); shopFooter:Hide() end
+	if open and not shop then results:Show() else results:Hide() end
+end
+
+-- Opens one item by its entry (ReagentBankUI's own shopping list rows do this).
+function Buy.OpenEntry(entry)
+	if not RAH.serverReady then return false end
+	RAH.SelectTab(tabIndex)
+	RAH.Request("F", { tostring(entry) }, function (result)
+		local r = result and result.rows[1]
+		if not r then return end
+		local g = toGroup(r, 1)
+		if g.auctions > 0 then Buy.OpenDetail(g) else RAH.Status("None are listed right now.", true) end
+	end)
+	return true
 end
 
 stacksToggle:SetScript("OnClick", function ()
@@ -1207,6 +1425,7 @@ RAH.On("ITEM_INFO", function ()
 	if not panel:IsShown() then return end
 	RAH.Debounce("buy-items", 0.05, function ()
 		results:Refresh()
+		shopping:Refresh()
 		if detail:IsShown() then
 			updateDetailHeader()
 			auctions:Refresh()
@@ -1227,13 +1446,30 @@ RAH.On("MONEY", function ()
 	end
 end)
 
--- A fresh visit starts on the favorites, like retail, or the prompt if there are none.
+-- The list changed (bought, removed, cleared, or added to from the profession window).
+RAH.On("SHOPPING", function ()
+	RAH.Debounce("buy-shopping", 0.05, function ()
+		updateShopButton()
+		if detail:IsShown() then
+			updateTally()
+		elseif state.lastQuery == "shopping" and RAH.active then
+			Buy.ShowShopping(true)
+		end
+	end)
+end)
+
+-- A fresh visit starts on the shopping list when there's something on it (that's what the
+-- visit is for), else on the favorites, like retail, or the prompt if there are none.
 RAH.On("READY", function ()
 	state.node = nil
 	expanded = {}
 	refreshCategories()
+	state.lastQuery = nil
 	Buy.CloseDetail()
-	if next(RetailAHDB.favorites) then
+	updateShopButton()
+	if #RAH.Shopping.Items() > 0 then
+		Buy.ShowShopping()
+	elseif next(RetailAHDB.favorites) then
 		Buy.ShowFavorites()
 	else
 		showResults({}, false, "Search for items, or pick a category.")
