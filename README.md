@@ -12,7 +12,9 @@ other modules keep working, because every auction is still an ordinary AzerothCo
 **Buy**
 - Search box, a **category tree** (weapons by type, armor by material and slot, gems by color,
   glyphs by class, trade goods, recipes by profession, pets, mounts...) and **filters**:
-  usable only, exact match, level range, and rarity checkboxes.
+  usable only, exact match, level range, and rarity checkboxes. With **Usable only** on, a
+  recipe you buy drops out of the results until the window closes, so it doesn't show up again
+  while it waits in the mailbox unlearned.
   **Item Enhancement** splits into Weapon Enchantments and Armor Enchantments by what each
   enchant scroll, armor kit or weapon chain goes on (the game files them all as one kind of
   item, so the server reads it from the enchant itself); vellums are under Trade Goods.
