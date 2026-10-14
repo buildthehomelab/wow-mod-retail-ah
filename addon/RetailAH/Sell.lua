@@ -17,16 +17,23 @@ local state = {
 	deposit = 0,
 	priceTouched = false,  -- the player set the price; stop suggesting one
 	settingPrice = false,  -- the addon is filling the price box, not the player
+	suggested = nil,       -- the price the addon last put in the box
 	listingsReq = nil,
 	depositReq = nil,
 	lowest = nil,       -- cheapest competing price, per unit for commodities
 	bot = nil,          -- { always, upTo }: what the AH buyer bot pays per unit, if it buys this
 	botReq = nil,
+	botKnown = false,   -- the bot price answered (or failed, or the server has none)
+	listingsKnown = false,
 	bank = {},          -- reagent bank contents, entry -> amount
 	bankReq = nil,
 }
 
 local DURATIONS = { 12, 24, 48 }
+
+-- Bot prices answered this visit, entry -> { always, upTo } or false (the bot doesn't buy it),
+-- so picking an item again fills the price at once, without spending a request.
+local botCache = {}
 
 -- The server's "bag" for addressing a commodity by entry, so it can come from the reagent bank.
 local BAG_BY_ENTRY = 255
@@ -280,6 +287,7 @@ botLine:SetScript("OnLeave", function () GameTooltip:Hide() end)
 -- Fill the price box without it counting as the player's choice.
 local function suggestPrice(copper)
 	state.settingPrice = true
+	state.suggested = math.floor(copper)
 	priceInput:SetCopper(copper)
 	state.settingPrice = false
 end
@@ -480,7 +488,8 @@ local function requestDeposit()
 end
 
 -- The price box starts at the price the player last posted this item at, else what the AH buyer
--- bot is sure to pay, else the cheapest listing.
+-- bot is sure to pay, else the cheapest listing. Each waits for the answers ahead of it, and the
+-- last resort comes once all of them are in (or failed), so the box never stays empty.
 local function defaultPrice()
 	local item = state.item
 	if state.priceTouched or not item then return end
@@ -491,8 +500,12 @@ local function defaultPrice()
 		priceHint:Show()
 	elseif botPrice() then
 		suggestPrice(botPrice())
+	elseif not state.botKnown then
+		return
 	elseif lowest and lowest > 0 then
 		suggestPrice(lowest)
+	elseif not state.listingsKnown then
+		return
 	else
 		-- Nothing to compare with: a few times what a vendor pays.
 		suggestPrice(math.max(item.sellPrice * 3, 100))
@@ -509,7 +522,9 @@ local function loadListings()
 	if item.commodity then
 		tierList:Show(); auctionList:Hide()
 		RAH.Request("C", { item.entry }, function (result)
-			if state.listingsReq ~= token or not result then return end
+			if state.listingsReq ~= token then return end
+			state.listingsKnown = true
+			if not result then defaultPrice() return end
 			local list, lowest = {}, nil
 			for i, r in ipairs(result.rows) do
 				table.insert(list, { price = r[1], units = r[2], own = r[3], order = i })
@@ -522,7 +537,9 @@ local function loadListings()
 	else
 		tierList:Hide(); auctionList:Show()
 		RAH.Request("I", { item.entry }, function (result)
-			if state.listingsReq ~= token or not result then return end
+			if state.listingsReq ~= token then return end
+			state.listingsKnown = true
+			if not result then defaultPrice() return end
 			local list, lowest = {}, nil
 			for i, r in ipairs(result.rows) do
 				local a = { id = r[1], count = r[2], bid = r[3], minBid = r[4], buyout = r[5], timeLeft = r[6], flags = r[7],
@@ -543,17 +560,44 @@ local function loadBotPrice()
 	local item = state.item
 	state.bot = nil
 	state.botReq = nil
+	state.botKnown = false
 	updateBotLine()
-	if not item or not RAH.botPrice then return end
-	local token = {}
-	state.botReq = token
-	RAH.Request("V", { item.entry }, function (result)
-		if state.botReq ~= token or not result then return end
-		local always, upTo = tonumber(result[1]) or 0, tonumber(result[2]) or 0
-		state.bot = upTo > 0 and { always = always, upTo = upTo } or nil
+	if not item or not RAH.botPrice then
+		state.botKnown = true
+		return
+	end
+	local function known(bot)
+		state.bot = bot or nil
+		state.botKnown = true
 		updateBotLine()
 		defaultPrice()
-	end)
+	end
+	if botCache[item.entry] ~= nil then
+		known(botCache[item.entry])
+		return
+	end
+	local token = {}
+	state.botReq = token
+	-- The server rations requests; when it stays busy (tooltips and item info spend the same
+	-- budget), ask once more a little later before falling back to the listings.
+	local function ask(again)
+		RAH.Request("V", { item.entry }, function (result)
+			if state.botReq ~= token then return end
+			if not result then
+				if again then
+					RAH.After(1.5, function () if state.botReq == token then ask(false) end end)
+				else
+					known(nil)
+				end
+				return
+			end
+			local always, upTo = tonumber(result[1]) or 0, tonumber(result[2]) or 0
+			local bot = upTo > 0 and { always = always, upTo = upTo } or false
+			botCache[item.entry] = bot
+			known(bot)
+		end)
+	end
+	ask(true)
 end
 
 local function showForm(item)
@@ -588,6 +632,7 @@ function Sell.SelectGroup(item)
 	state.lowest = nil
 	state.available = item.count
 	state.deposit = 0
+	state.listingsKnown = false
 	suggestPrice(0)
 	priceHint:Hide()
 	bidInput:SetCopper(0)
@@ -596,6 +641,8 @@ function Sell.SelectGroup(item)
 	bagItems:Refresh()
 	loadBotPrice()
 	loadListings()
+	-- A saved or already known price goes in at once; the rest waits for the server.
+	defaultPrice()
 	requestDeposit()
 end
 
@@ -648,7 +695,8 @@ end
 qtyBox:SetScript("OnTextChanged", function () updateTotal(); updatePostButton(); requestDeposit() end)
 maxButton:SetScript("OnClick", function () qtyBox:SetText(tostring(state.available or 0)) end)
 MoneyInputFrame_SetOnValueChangedFunc(priceInput, function ()
-	if not state.settingPrice then
+	-- Only a real change counts: the client can report the addon's own fill late.
+	if not state.settingPrice and priceInput:GetCopper() ~= state.suggested then
 		state.priceTouched = true
 		priceHint:Hide()
 	end
@@ -827,6 +875,8 @@ end)
 RAH.On("POSTED", function () if panel:IsShown() then loadBank() end end)
 
 RAH.On("READY", function ()
+	-- A new visit: the bot's prices may have been reconfigured since.
+	botCache = {}
 	if panel:IsShown() then updatePostButton(); loadBank() end
 end)
 

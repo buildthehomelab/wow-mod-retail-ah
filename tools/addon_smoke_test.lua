@@ -288,12 +288,14 @@ local function reply(msg)
 end
 
 local busyOnce = {}
+local busyAlways = {}  -- commands the server keeps refusing as busy
 local tooltipOld
 local function serve(msg)
 	local cmd, req = msg:match("^([^:]+):([^:]*)")
 	print("  -> " .. msg)
 	-- The first owned-auctions request is refused as busy, to exercise the retry.
 	if cmd == "O" and not busyOnce[req] then busyOnce[req] = true; reply("ERR:" .. req .. ":busy"); return end
+	if busyAlways[cmd] then reply("ERR:" .. req .. ":busy"); return end
 	if cmd == "HELLO" then reply("HELLO:" .. req .. ":1:5:15:127:12345:3:22:455679")
 	elseif cmd == "S" or cmd == "F" then
 		-- 3 matches hidden by level (soonest at 24), 2 by era (soonest after Molten Core).
@@ -719,6 +721,41 @@ step("own sell price: remembered, then forgotten", function ()
 	RAH.Sell.Select(0, 1)
 	tick(0.5)
 	assert(priceBox.__copper == 1234, "not back at the bot's price")
+end)
+step("sell price never stays at 0", function ()
+	local priceBox = find(function (f) return rawget(f, "__copper") == 1234 end)
+	-- A late change report for the addon's own fill isn't the player's price.
+	RAH.Sell.Clear()
+	RAH.Sell.Select(0, 1)
+	priceBox.onValueChangedFunc()
+	tick(0.5)
+	assert(priceBox.__copper == 1234, "a spurious change event kept the bot price out: " .. tostring(priceBox.__copper))
+
+	-- The bot price stays busy: the cheapest listing (10c) goes in.
+	RAH.Fire("READY")
+	busyAlways.V = true
+	RAH.Sell.Clear()
+	RAH.Sell.Select(0, 1)
+	tick(10)
+	assert(priceBox.__copper == 10, "busy bot price left the box at " .. tostring(priceBox.__copper))
+
+	-- Both stay busy: the vendor-based fallback, never 0.
+	RAH.Fire("READY")
+	busyAlways.C = true
+	RAH.Sell.Clear()
+	RAH.Sell.Select(0, 1)
+	tick(10)
+	busyAlways = {}
+	assert(priceBox.__copper > 0, "box left at 0 with the server busy")
+
+	-- A bot price answered this visit fills at once, before any answer.
+	RAH.Sell.Clear()
+	RAH.Sell.Select(0, 1)
+	tick(0.5)
+	RAH.Sell.Clear()
+	RAH.Sell.Select(0, 1)
+	assert(priceBox.__copper == 1234, "cached bot price not filled at once: " .. tostring(priceBox.__copper))
+	tick(0.5)
 end)
 step("select gear", function () RAH.Sell.Select(0, 3) end)
 step("ledger tab", function ()
