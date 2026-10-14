@@ -782,6 +782,7 @@ events:SetScript("OnEvent", function (self, event, ...)
 			RetailAHDB.duration = RetailAHDB.duration or 24
 			RetailAHDB.filters = RetailAHDB.filters or {}
 			RetailAHDB.items = RetailAHDB.items or {}
+			RetailAHDB.prices = RetailAHDB.prices or {}
 		end
 	elseif event == "PLAYER_LOGIN" then
 		-- The stock window only opens when we hand over to it.
@@ -838,6 +839,12 @@ SlashCmdList.RETAILAH = function (msg)
 		end
 		RAH.Print(RetailAHDB.alwaysCompare and "item tooltips compare with your equipped gear on every hover."
 			or "item tooltips compare with your gear only while you hold Shift.")
+	elseif msg == "prices" then
+		local n = 0
+		for _ in pairs(RetailAHDB.prices) do n = n + 1 end
+		RetailAHDB.prices = {}
+		RAH.Print("forgot " .. n .. " remembered sell price" .. (n == 1 and "" or "s")
+			.. ". The Sell tab starts at the AH buyer's price again.")
 	elseif msg == "tooltip" or msg == "tooltip on" or msg == "tooltip off" then
 		local on
 		if msg ~= "tooltip" then on = msg == "tooltip on" end
@@ -848,6 +855,7 @@ SlashCmdList.RETAILAH = function (msg)
 		RAH.Print("|cffffd200/rah classic|r or |cffffd200/rah retail|r picks which window opens at the auctioneer. "
 			.. "|cffffd200/rah reset|r moves the window back. "
 			.. "|cffffd200/rah compare|r compares hovered items with your gear without Shift, or only with Shift again. "
-			.. "|cffffd200/rah tooltip|r turns the AH bot prices on item tooltips on or off.")
+			.. "|cffffd200/rah tooltip|r turns the AH bot prices on item tooltips on or off. "
+			.. "|cffffd200/rah prices|r forgets the sell prices you set.")
 	end
 end

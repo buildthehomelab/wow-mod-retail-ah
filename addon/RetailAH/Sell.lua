@@ -89,6 +89,11 @@ local priceLabel = RAH.CreateLabel(fields, "Unit Price")
 priceLabel:SetPoint("TOPLEFT", qtyLabel, "BOTTOMLEFT", 0, -20)
 local priceInput = RAH.CreateMoneyInput(fields)
 priceInput:SetPoint("TOPLEFT", fields, "TOPLEFT", 90, -34)
+-- Shown while the box holds the price the player last posted this item at.
+local priceHint = fields:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+priceHint:SetPoint("TOPLEFT", priceLabel, "BOTTOMLEFT", 0, -1)
+priceHint:SetText("|cffffd100your last price|r")
+priceHint:Hide()
 
 local bidLabel = RAH.CreateLabel(fields, "Starting Bid", "GameFontNormalSmall")
 bidLabel:SetPoint("TOPLEFT", priceLabel, "BOTTOMLEFT", 0, -20)
@@ -238,6 +243,18 @@ local function botPrice()
 	return bot.always > 0 and bot.always or bot.upTo
 end
 
+-- Posted prices the player chose are remembered (account wide) per commodity, and per item and
+-- random suffix for gear, so the next post of it starts there instead of at the bot's price.
+local function priceKey(item)
+	if item.commodity then return item.identity end
+	local suffix = tonumber(item.link:match("item:%d+:[%-%d]*:[%-%d]*:[%-%d]*:[%-%d]*:[%-%d]*:([%-%d]+)") or 0) or 0
+	return suffix ~= 0 and (item.entry .. "/" .. suffix) or tostring(item.entry)
+end
+
+local function savedPrice(item)
+	return item and RetailAHDB.prices[priceKey(item)]
+end
+
 botLine:SetScript("OnClick", function () local p = botPrice() if p then setPrice(p) end end)
 botLine:SetScript("OnEnter", function (self)
 	local bot = state.bot
@@ -253,6 +270,9 @@ botLine:SetScript("OnEnter", function (self)
 	end
 	GameTooltip:AddLine("It checks a few auctions every few minutes, so a sale can take a while. Players may pay more.", 0.7, 0.7, 0.7, true)
 	GameTooltip:AddLine("Click to use the sure price.", 0, 1, 0)
+	if savedPrice(state.item) then
+		GameTooltip:AddLine("Post at it and your own price for this item is forgotten.", 0, 1, 0, true)
+	end
 	GameTooltip:Show()
 end)
 botLine:SetScript("OnLeave", function () GameTooltip:Hide() end)
@@ -459,12 +479,17 @@ local function requestDeposit()
 	end)
 end
 
--- The price box starts at what the AH buyer bot is sure to pay, else the cheapest listing.
+-- The price box starts at the price the player last posted this item at, else what the AH buyer
+-- bot is sure to pay, else the cheapest listing.
 local function defaultPrice()
 	local item = state.item
 	if state.priceTouched or not item then return end
 	local lowest = state.lowest
-	if botPrice() then
+	local saved = savedPrice(item)
+	if saved then
+		suggestPrice(saved)
+		priceHint:Show()
+	elseif botPrice() then
 		suggestPrice(botPrice())
 	elseif lowest and lowest > 0 then
 		suggestPrice(lowest)
@@ -564,6 +589,7 @@ function Sell.SelectGroup(item)
 	state.available = item.count
 	state.deposit = 0
 	suggestPrice(0)
+	priceHint:Hide()
 	bidInput:SetCopper(0)
 	qtyBox:SetText(tostring(item.commodity and (item.count + (item.bank or 0)) or 1))
 	showForm(item)
@@ -622,7 +648,10 @@ end
 qtyBox:SetScript("OnTextChanged", function () updateTotal(); updatePostButton(); requestDeposit() end)
 maxButton:SetScript("OnClick", function () qtyBox:SetText(tostring(state.available or 0)) end)
 MoneyInputFrame_SetOnValueChangedFunc(priceInput, function ()
-	if not state.settingPrice then state.priceTouched = true end
+	if not state.settingPrice then
+		state.priceTouched = true
+		priceHint:Hide()
+	end
 	updateTotal()
 	updatePostButton()
 end)
@@ -648,6 +677,8 @@ postButton:SetScript("OnClick", function ()
 	local item = state.item
 	if not item then return end
 	local qty, price = quantity(), priceInput:GetCopper()
+	-- Only a price the player picked is remembered; the bot's price is never stored as theirs.
+	local chosen, bot = state.priceTouched, botPrice()
 	RAH.SetEnabled(postButton, false)
 	RAH.QuietChat(5)
 	local args
@@ -666,6 +697,9 @@ postButton:SetScript("OnClick", function ()
 			return
 		end
 		local created, requested, status = tonumber(result[1]) or 0, tonumber(result[2]) or 0, result[3]
+		if created > 0 and chosen then
+			RetailAHDB.prices[priceKey(item)] = price ~= bot and price or nil
+		end
 		if created > 0 and status == "ok" then
 			local what = item.commodity and (RAH.Number(qty) .. " x " .. item.link) or item.link
 			RAH.Status("Posted " .. what .. (created > 1 and (" in " .. created .. " auctions") or "") .. ".")
