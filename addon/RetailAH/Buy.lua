@@ -28,6 +28,7 @@ local state = {
 	stacks = false,    -- a commodity shown as its separate stacks, to bid on one
 	pickNext = false,  -- select the cheapest buyable listing when the list comes back
 	shown = nil,       -- showResults' arguments, to show the same answer again
+	usable = nil,      -- the search was "Usable only" (the checkbox can change without searching)
 }
 
 -- Recipes bought this visit. "Usable only" hides the ones the player knows, but a bought one
@@ -609,7 +610,7 @@ end
 local function showResults(rows, truncated, emptyText, keepScroll, stats, locked)
 	state.shown = { rows, truncated, emptyText, stats, locked }
 	state.results = {}
-	local hideBought = state.lastQuery == "search" and RetailAHDB.filters.usable
+	local hideBought = state.lastQuery == "search" and state.usable
 	local bought = 0
 	for i, r in ipairs(rows) do
 		if hideBought and boughtRecipes[r[1]] then
@@ -632,7 +633,8 @@ local function showResults(rows, truncated, emptyText, keepScroll, stats, locked
 	RAH.Prefetch(entries)
 	if truncated then
 		-- Short: it shares the row with the search box. Narrowing the search shows the rest.
-		resultCount:SetText("|cffff8000Showing the first " .. #rows .. " items|r")
+		resultCount:SetText("|cffff8000Showing the first " .. #state.results .. " items|r"
+			.. (bought > 0 and (" |cff808080+" .. bought .. " bought|r") or ""))
 	elseif state.lastQuery == "favorites" then
 		resultCount:SetText(#rows .. " favorites")
 	else
@@ -659,6 +661,7 @@ function Buy.Search()
 	state.lastQuery = "search"
 	Buy.ShowList()
 	local f = RetailAHDB.filters
+	state.usable = f.usable
 	local flags = (f.usable and 1 or 0) + (f.exact and 2 or 0) + ((f.uncollected and RAH.appearances) and 4 or 0)
 	local mask = 0
 	if f.qualities then

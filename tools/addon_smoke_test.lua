@@ -597,7 +597,11 @@ step("usable only: a recipe bought this visit drops out of the results until the
 	print("  " .. count)
 	RAH.Buy.Search(); tick(0.5)
 	assert(findText("^1 item"), "a new search listed the bought recipe again")
+	-- Unticking the box doesn't search again: the list on screen is still a Usable only one.
 	RetailAHDB.filters.usable = nil
+	RAH.Buy.OpenDetail({ entry = 2589, price = 13, units = 47, auctions = 3, flags = 5 }); tick(0.5)
+	back.__scripts.OnClick(back)
+	assert(findText("^1 item"), "the redraw followed the checkbox, not the search")
 	RAH.Buy.Search(); tick(0.5)
 	assert(findText("^2 items"), "without Usable only the recipe should show")
 	RetailAHDB.filters.usable = true
