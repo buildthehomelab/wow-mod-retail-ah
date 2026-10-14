@@ -1,7 +1,8 @@
--- Makes the RetailAH addon required for every player through Portalkeeper (mod-realm-config).
--- Run by hand against acore_world once the repo is public on GitHub. It is kept out of
--- data/sql on purpose: the table belongs to mod-realm-config, and a failing statement there
--- would stop the database import at startup.
+-- Optional. Only for realms that hand out addons with Portalkeeper
+-- (https://github.com/buildthehomelab/wow-Portalkeeper) through mod-realm-config.
+-- Makes the RetailAH addon required for every player. Run it by hand against acore_world.
+-- It is kept out of data/sql on purpose: the table belongs to mod-realm-config, and a
+-- failing statement there would stop the database import at startup.
 
 DELETE FROM `mod_realm_config_addon` WHERE `addon_key` = 'RetailAH';
 INSERT INTO `mod_realm_config_addon`
