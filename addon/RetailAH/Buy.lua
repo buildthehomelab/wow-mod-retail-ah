@@ -27,7 +27,25 @@ local state = {
 	tally = { count = 0, spent = 0 },  -- bought since this item was opened
 	stacks = false,    -- a commodity shown as its separate stacks, to bid on one
 	pickNext = false,  -- select the cheapest buyable listing when the list comes back
+	shown = nil,       -- showResults' arguments, to show the same answer again
 }
+
+-- Recipes bought this visit. "Usable only" hides the ones the player knows, but a bought one
+-- waits in the mailbox unlearned, so it's hidden from those results until the window closes.
+local ITEM_CLASS_RECIPE = 9
+local boughtRecipes = {}
+
+local function isRecipe(entry)
+	local info = RAH.Item(entry)
+	if not info then return false end
+	if info.classId then return info.classId == ITEM_CLASS_RECIPE end
+	-- The client's class is localized; the auction classes list it 9th, like the item class id.
+	return GetAuctionItemClasses ~= nil and info.class == select(ITEM_CLASS_RECIPE, GetAuctionItemClasses())
+end
+
+local function noteBought(g)
+	if g and isRecipe(g.entry) then boughtRecipes[g.entry] = true end
+end
 
 -----------------------------------------
 -- search row
@@ -589,12 +607,21 @@ local function toGroup(r, order, stats)
 end
 
 local function showResults(rows, truncated, emptyText, keepScroll, stats, locked)
+	state.shown = { rows, truncated, emptyText, stats, locked }
 	state.results = {}
+	local hideBought = state.lastQuery == "search" and RetailAHDB.filters.usable
+	local bought = 0
 	for i, r in ipairs(rows) do
-		table.insert(state.results, toGroup(r, i, stats))
+		if hideBought and boughtRecipes[r[1]] then
+			bought = bought + 1
+		else
+			table.insert(state.results, toGroup(r, i, stats))
+		end
 	end
 	if not emptyText and locked and #rows == 0 then
 		emptyText = "Nothing you can see yet: " .. lockedText(locked) .. "."
+	elseif not emptyText and bought > 0 and #state.results == 0 then
+		emptyText = "Nothing left: you've bought every recipe here."
 	end
 	results:SetEmptyText(emptyText or "No items found.")
 	lockedHover.locked = locked
@@ -609,12 +636,16 @@ local function showResults(rows, truncated, emptyText, keepScroll, stats, locked
 	elseif state.lastQuery == "favorites" then
 		resultCount:SetText(#rows .. " favorites")
 	else
-		local text = #rows == 1 and "1 item" or (#rows .. " items")
+		local n = #state.results
+		local text = n == 1 and "1 item" or (n .. " items")
 		if state.node then
 			text = text .. " in |cffffd200" .. state.node.name .. "|r"
 		end
 		if locked then
 			text = text .. " |cff808080+" .. (locked.byLevel + locked.byEra) .. " locked|r"
+		end
+		if bought > 0 then
+			text = text .. " |cff808080+" .. bought .. " bought|r"
 		end
 		resultCount:SetText(text)
 	end
@@ -868,7 +899,13 @@ back:SetPoint("TOPLEFT", detail, "TOPLEFT", 8, -8)
 back:SetScript("OnClick", function ()
 	Buy.CloseDetail()
 	-- Something was probably bought: what's left and the prices have changed.
-	if state.lastQuery == "shopping" then Buy.ShowShopping(true) end
+	if state.lastQuery == "shopping" then
+		Buy.ShowShopping(true)
+	elseif state.lastQuery == "search" and state.shown then
+		-- Hides a recipe just bought.
+		local s = state.shown
+		showResults(s[1], s[2], s[3], true, s[4], s[5])
+	end
 end)
 
 local detailIcon = RAH.CreateItemButton(detail, 34)
@@ -1095,9 +1132,11 @@ buyNow:SetScript("OnClick", function ()
 				PlaySound("LOOTWINDOWCOINSOUND")
 				boughtForList(g, bought)
 				addToTally(bought, spent)
+				if bought > 0 then noteBought(g) end
 			elseif status == "partial" then
 				boughtForList(g, bought)
 				addToTally(bought, spent)
+				if bought > 0 then noteBought(g) end
 				RAH.Status("Bought " .. RAH.Number(bought) .. " of " .. RAH.Number(q.quantity) .. " for " .. RAH.Money(spent) .. ".", true)
 			elseif status == "price" then
 				RAH.Status("Prices changed: that now costs " .. RAH.Money(tonumber(result[5]) or 0) .. ". Check and buy again.", true)
@@ -1245,6 +1284,7 @@ local function placeBid(a, price, verb, skipConfirm)
 				PlaySound("LOOTWINDOWCOINSOUND")
 				if g then boughtForList(g, a.count) end
 				addToTally(a.count, price)
+				noteBought(g)
 				state.pickNext = true
 			elseif status == "bid" then
 				RAH.Status("Bid placed. You'll get a mail if you're outbid.")
@@ -1479,6 +1519,7 @@ end)
 
 RAH.On("CLOSED", function ()
 	resultCache = {}
+	boughtRecipes = {}
 	filters:Hide()
 	state.searchReq = nil
 	Buy.CloseDetail()

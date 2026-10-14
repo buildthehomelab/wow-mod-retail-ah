@@ -571,6 +571,42 @@ step("tally shows the purchase", function ()
 	assert(tally, "no tally")
 	print("  " .. tally)
 end)
+step("usable only: a recipe bought this visit drops out of the results until the window closes", function ()
+	-- The shortsword plays a recipe here.
+	local itemInfo = GetItemInfo
+	GetItemInfo = function (item)
+		local r = { itemInfo(item) }
+		if r[2] and r[2]:find("item:15210:") then r[6] = "Recipe" end
+		return table.unpack(r, 1, 11)
+	end
+	GetAuctionItemClasses = function ()
+		return "Weapon", "Armor", "Container", "Consumable", "Glyph", "Trade Goods", "Projectile", "Quiver",
+			"Recipe", "Gem", "Miscellaneous", "Quest"
+	end
+	RetailAHDB.filters.usable = true
+	RAH.Buy.Search(); tick(0.5)
+	assert(findText("^2 items"), "search didn't show both items")
+	RAH.Buy.OpenDetail({ entry = 15210, price = 45000, units = 2, auctions = 2, flags = 0 }); tick(0.5)
+	local buy = find(function (f) return f.__kind == "Button" and f.__text == "Buy Now" and f.__enabled and f:IsVisible() end)
+	assert(buy, "Buy Now not ready")
+	buy.__scripts.OnClick(buy); lastPopup.data(); tick(0.5)
+	local back = find(function (f) return f.__kind == "Button" and f.__text == "< Back" end)
+	back.__scripts.OnClick(back)
+	local count = findText("^1 item")
+	assert(count and count:find("+1 bought", 1, true), "bought recipe still listed: " .. tostring(count))
+	print("  " .. count)
+	RAH.Buy.Search(); tick(0.5)
+	assert(findText("^1 item"), "a new search listed the bought recipe again")
+	RetailAHDB.filters.usable = nil
+	RAH.Buy.Search(); tick(0.5)
+	assert(findText("^2 items"), "without Usable only the recipe should show")
+	RetailAHDB.filters.usable = true
+	RAH.Fire("CLOSED")
+	RAH.Buy.Search(); tick(0.5)
+	assert(findText("^2 items"), "closing the window didn't forget the bought recipes")
+	RetailAHDB.filters.usable = nil
+	GetItemInfo, GetAuctionItemClasses = itemInfo, nil
+end)
 step("item info from the server, saved across sessions", function ()
 	assert(RAH.itemInfo, "item info flag not read")
 	assert(RAH.Item(99991) == nil, "unknown item answered at once")
