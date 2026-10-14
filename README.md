@@ -79,6 +79,11 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   bot sometimes pays more (its price has a random part), the line says how much. Click the line
   to put the bot's price back. Items vendors sell are left out; the bot only pays vendor price
   for them.
+- **Your own price is remembered**: post an item at a price you set (typed, or matched from a
+  listing) and the next post of that item starts at it, marked *your last price*. Posting at
+  the bot's price again (click the AH buyer line) forgets it, and `/rah prices` forgets all of
+  them. Commodities are remembered per unit, gear per item and random suffix, for the whole
+  account.
 
 **Auctions**
 - Your auctions, with bids and time left; cancel them.
@@ -349,6 +354,7 @@ The era gate also reads mod-individual-progression's `IndividualProgression.Enab
 - `/rah reset` moves the window back to its default spot.
 - `/rah compare` toggles comparing hovered items with your equipped gear without Shift (off by default).
 - `/rah tooltip` toggles the AH bot prices on item tooltips (on by default).
+- `/rah prices` forgets the sell prices you set, so the Sell tab starts at the AH buyer's price again.
 - In the Buy tab, click the selected category again to clear it and search every category.
 
 GM commands on the server:
