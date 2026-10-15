@@ -244,16 +244,12 @@ namespace RetailAH
 
         // Optional extra gap between searches, on top of the request budget. Requests are
         // handled once per world tick, so two searches sent 300 ms apart can be handled closer
-        // together than that; off by default.
-        bool SearchAllowed(SessionState& state)
+        // together than that; off by default. Checked before the budget, so a refused search
+        // costs no token.
+        bool SearchAllowed(SessionState const& state)
         {
-            if (!sConfig.searchCooldownMs)
-                return true;
-            uint32 now = getMSTime();
-            if (state.lastSearch && getMSTimeDiff(state.lastSearch, now) < sConfig.searchCooldownMs)
-                return false;
-            state.lastSearch = now;
-            return true;
+            return !sConfig.searchCooldownMs || !state.lastSearch
+                || getMSTimeDiff(state.lastSearch, getMSTime()) >= sConfig.searchCooldownMs;
         }
 
         void Dispatch(Player* player, std::string_view message)
@@ -312,11 +308,13 @@ namespace RetailAH
             }
 
             // Favorites come in chunks of one lookup, so only real searches count for the gap.
-            if (!TakeToken(itr->second, command == "N" ? 0.25f : 1.0f) || (command == "S" && !SearchAllowed(itr->second)))
+            if ((command == "S" && !SearchAllowed(itr->second)) || !TakeToken(itr->second, command == "N" ? 0.25f : 1.0f))
             {
                 SendError(ctx, "busy");
                 return;
             }
+            if (command == "S")
+                itr->second.lastSearch = getMSTime();
 
             if (command == "S" || command == "F")
             {

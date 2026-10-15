@@ -413,6 +413,7 @@ local HEAVY_TIMEOUT = 5
 local heavyQueue = {}
 local inFlight = {}  -- req -> time sent
 local inFlightCount = 0
+local retrying = {}  -- req -> heavy request waiting to ask again after "busy"
 
 local LISTS = { S = true, C = true, I = true, O = true, L = true, R = true, G = true, N = true, T = true }
 
@@ -467,6 +468,9 @@ end
 function RAH.CancelQueuedSearches()
 	for _, p in ipairs(heavyQueue) do pending[p.req] = nil end
 	heavyQueue = {}
+	-- Those waiting to ask again too: otherwise they'd take the server's search slots from the new one.
+	for req in pairs(retrying) do pending[req] = nil end
+	retrying = {}
 end
 
 local function resetHeavy()
@@ -530,7 +534,11 @@ local function onAddonMessage(message)
 		if rest == "busy" and p and p.tries < 5 then
 			p.tries = p.tries + 1
 			landHeavy(req)
-			RAH.After(0.15 * p.tries, function () if pending[req] == p then dispatch(p) end end)
+			if p.heavy then retrying[req] = p end
+			RAH.After(0.15 * p.tries, function ()
+				if retrying[req] == p then retrying[req] = nil end
+				if pending[req] == p then dispatch(p) end
+			end)
 			return
 		end
 		finish(req, nil, rest)
