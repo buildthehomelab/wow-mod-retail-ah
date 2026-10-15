@@ -108,13 +108,15 @@ namespace RetailAH::ReagentBank
         return contents;
     }
 
-    // Relative, so a write the reagent bank has queued in between still adds up.
+    // Relative, so a write the reagent bank has made in between still adds up. amount is
+    // INT UNSIGNED, so it is clamped at 0 rather than subtracted below it (an error in strict
+    // mode). The caller commits synchronously; see PostFromBank.
     void Take(Player const* player, uint32 entry, uint32 count, CharacterDatabaseTransaction trans)
     {
         Keys keys = KeysFor(player);
-        trans->Append("UPDATE mod_reagent_bank_account SET amount = amount - {} WHERE account_id = {} AND guid = {} AND item_entry = {}",
-            count, keys.account, keys.guid, entry);
-        trans->Append("DELETE FROM mod_reagent_bank_account WHERE account_id = {} AND guid = {} AND item_entry = {} AND amount <= 0",
+        trans->Append("UPDATE mod_reagent_bank_account SET amount = IF(amount > {}, amount - {}, 0) WHERE account_id = {} AND guid = {} AND item_entry = {}",
+            count, count, keys.account, keys.guid, entry);
+        trans->Append("DELETE FROM mod_reagent_bank_account WHERE account_id = {} AND guid = {} AND item_entry = {} AND amount = 0",
             keys.account, keys.guid, entry);
     }
 
