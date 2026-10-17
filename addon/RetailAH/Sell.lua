@@ -628,6 +628,7 @@ end
 -- Pick a row of the item list (which may be reagent-bank only).
 function Sell.SelectGroup(item)
 	state.item = item
+	state.postedAt, state.postedIndex = nil, nil
 	state.priceTouched = false
 	state.lowest = nil
 	state.available = item.count
@@ -676,13 +677,21 @@ function Sell.Clear()
 end
 
 -- After a post the picked stack may be gone; find another stack of the same thing, if any.
+-- When a post just sold the last of it, move on to the row that took its place in the list.
+local ADVANCE_WINDOW = 5
+
 local function relocate()
 	local item = state.item
 	if not item then return end
 	local list, groups = scanBags()
 	local g = groups[item.identity]
 	if not g then
-		Sell.Clear()
+		local index = state.postedAt and GetTime() - state.postedAt < ADVANCE_WINDOW and state.postedIndex
+		state.postedAt, state.postedIndex = nil, nil
+		bagItems:SetItems(list, true)
+		local items = bagItems.items
+		local nextItem = index and items[math.min(index, #items)]
+		if nextItem then Sell.SelectGroup(nextItem) else Sell.Clear() end
 		return
 	end
 	item.bag, item.slot, item.count, item.bank = g.bag, g.slot, g.count, g.bank
@@ -729,6 +738,10 @@ postButton:SetScript("OnClick", function ()
 	local chosen, bot = state.priceTouched, botPrice()
 	RAH.SetEnabled(postButton, false)
 	RAH.QuietChat(5)
+	state.postedIndex = nil
+	for i, b in ipairs(bagItems.items or {}) do
+		if b.identity == item.identity then state.postedIndex = i break end
+	end
 	local args
 	if item.commodity then
 		-- The bid goes last, so a server without it just posts buyout only.
@@ -758,6 +771,7 @@ postButton:SetScript("OnClick", function ()
 			RAH.Status(STATUS_TEXT[status] or "Posting failed.", true)
 		end
 		state.priceTouched = true
+		if created > 0 then state.postedAt = GetTime() end
 		RAH.After(0.3, function ()
 			relocate()
 			loadListings()
