@@ -798,6 +798,23 @@ step("sell price never stays at 0", function ()
 	tick(0.5)
 end)
 step("select gear", function () RAH.Sell.Select(0, 3) end)
+step("selling the last of an item picks the row that took its place", function ()
+	-- The list is by name: Linen Cloth, Peacebloom (reagent bank), Raider's Shortsword.
+	local deposit
+	local original = SendAddonMessage
+	SendAddonMessage = function (p, m, c, t) if m:match("^D:") then deposit = m end original(p, m, c, t) end
+	RAH.Sell.Select(0, 3)
+	tick(0.5)
+	assert(deposit and deposit:match("^D:%d+:0:3:"), "gear not selected: " .. tostring(deposit))
+	local sold = bags[0][3]
+	bags[0][3] = nil
+	local button = find(function (f) return f.__kind == "Button" and f.__text == "Post" end)
+	button.__scripts.OnClick(button)
+	tick(0.5)
+	bags[0][3] = sold
+	SendAddonMessage = original
+	assert(deposit:match("^D:%d+:255:2447:"), "the last row (now Peacebloom) wasn't picked: " .. tostring(deposit))
+end)
 step("ledger tab", function ()
 	assert(RAH.ledger, "ledger flag not read")
 	local sent
