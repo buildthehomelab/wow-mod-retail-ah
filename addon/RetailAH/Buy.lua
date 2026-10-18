@@ -368,22 +368,28 @@ for i = 1, CATEGORY_ROWS do
 		end
 		local l = piece("options_listexpand_left", 12 * CATEGORY_ROW / 26)
 		l:SetPoint("LEFT", btn, "LEFT")
-		-- The right cap carries the +; categories without children end on the plain middle.
+		-- The right cap carries the +; categories without children close on the left cap, mirrored.
 		local r = piece("options_listexpand_right", 28 * CATEGORY_ROW / 26)
 		r:SetPoint("RIGHT", btn, "RIGHT")
+		local e = piece("options_listexpand_left", 12 * CATEGORY_ROW / 26)
+		e:SetPoint("RIGHT", btn, "RIGHT")
+		local ulx, uly, llx, lly, urx, ury, lrx, lry = e:GetTexCoord()
+		e:SetTexCoord(urx, ury, lrx, lry, ulx, uly, llx, lly)
 		local m = piece("_options_listexpand_middle")
 		m:SetPoint("TOPLEFT", l, "TOPRIGHT")
-		btn.bar = { l, m, r }
+		btn.bar = { l, m, r, e }
 		btn.SetExpander = function (self, hasChildren, open)
 			m:ClearAllPoints()
 			m:SetPoint("TOPLEFT", l, "TOPRIGHT")
 			if hasChildren then
 				D:SafeSetAtlas(r, open and "options_listexpand_right_expanded" or "options_listexpand_right")
 				r:Show()
+				e:Hide()
 				m:SetPoint("BOTTOMRIGHT", r, "BOTTOMLEFT")
 			else
 				r:Hide()
-				m:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT")
+				e:Show()
+				m:SetPoint("BOTTOMRIGHT", e, "BOTTOMLEFT")
 			end
 		end
 	else
