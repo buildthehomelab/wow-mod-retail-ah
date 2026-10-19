@@ -241,7 +241,12 @@ botText:SetAllPoints(botLine)
 botText:SetJustifyH("LEFT")
 local botHighlight = botLine:CreateTexture(nil, "HIGHLIGHT")
 botHighlight:SetAllPoints(botLine)
-botHighlight:SetTexture(1, 1, 1, 0.08)
+if RAH.Dragon() then
+	botHighlight:SetTexture(1, 1, 1, 0.08)
+else
+	botHighlight:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+	botHighlight:SetBlendMode("ADD")
+end
 
 -- The price to suggest for the bot: what it pays on every look, or failing that its best roll.
 local function botPrice()
