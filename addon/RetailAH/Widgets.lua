@@ -1,5 +1,6 @@
 -- RetailAH widgets: buttons, inputs, panes and scrolling lists, dressed in DragonUI's retail art
--- when DragonUI is loaded and in a dark retail-like style of their own otherwise.
+-- when DragonUI is loaded and in the stock Blizzard 3.3.5 look otherwise (dialog frame, options-box
+-- panes, column tabs, stock highlights and controls).
 
 local RAH = RetailAH
 
@@ -100,7 +101,8 @@ function RAH.DressWindow(frame)
 	return false
 end
 
--- A recessed pane: retail's InsetFrameTemplate with DragonUI, the stock tooltip border without.
+-- A recessed pane: retail's InsetFrameTemplate with DragonUI, the stock options-box look without
+-- (OptionsBoxTemplate's tooltip border and background at its colours).
 function RAH.CreateInset(parent)
 	local pane = CreateFrame("Frame", nil, parent)
 	local D = RAH.Dragon()
@@ -110,8 +112,8 @@ function RAH.CreateInset(parent)
 		NineSliceUtils.ApplyLayout(pane, NineSliceUtils.GetLayout("InsetFrameTemplate"))
 	else
 		pane:SetBackdrop(RAH.TOOLTIP_BACKDROP)
-		pane:SetBackdropColor(0, 0, 0, 0.75)
-		pane:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+		pane:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
+		pane:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 	end
 	return pane
 end

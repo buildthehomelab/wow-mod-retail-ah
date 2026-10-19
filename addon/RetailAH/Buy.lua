@@ -109,14 +109,15 @@ local filters = CreateFrame("Frame", nil, panel)
 filters:SetSize(430, 284)
 filters:SetPoint("TOPLEFT", filterButton, "BOTTOMLEFT", 0, -4)
 filters:SetFrameStrata("DIALOG")
--- The stock tooltip look; DragonUI's dark panel when it's there.
+-- The stock tooltip look, at GameTooltip's colours; DragonUI's dark panel when it's there.
 filters:SetBackdrop(RAH.TOOLTIP_BACKDROP)
 if RAH.Dragon() then
 	filters:SetBackdropColor(0.05, 0.05, 0.06, 0.97)
 	filters:SetBackdropBorderColor(0.6, 0.6, 0.65, 1)
 else
-	filters:SetBackdropColor(0, 0, 0, 0.95)
-	filters:SetBackdropBorderColor(1, 1, 1, 1)
+	filters:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r, TOOLTIP_DEFAULT_BACKGROUND_COLOR.g,
+		TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
+	filters:SetBackdropBorderColor(TOOLTIP_DEFAULT_COLOR.r, TOOLTIP_DEFAULT_COLOR.g, TOOLTIP_DEFAULT_COLOR.b)
 end
 filters:EnableMouse(true)
 filters:Hide()
@@ -169,10 +170,23 @@ for i, q in ipairs(RAH.QUALITIES) do
 end
 
 -- stats: the item must have every one that's checked
-local statsDivider = RAH.Solid(filters, "ARTWORK", 1, 1, 1, 0.12)
-statsDivider:SetWidth(1)
-statsDivider:SetPoint("TOPLEFT", filters, "TOPLEFT", 212, -12)
-statsDivider:SetPoint("BOTTOMLEFT", filters, "BOTTOMLEFT", 212, 12)
+-- The column divider: a faint line with DragonUI, the stock tooltip border's edge piece without.
+local statsDivider
+if RAH.Dragon() then
+	statsDivider = RAH.Solid(filters, "ARTWORK", 1, 1, 1, 0.12)
+	statsDivider:SetWidth(1)
+	statsDivider:SetPoint("TOPLEFT", filters, "TOPLEFT", 212, -12)
+	statsDivider:SetPoint("BOTTOMLEFT", filters, "BOTTOMLEFT", 212, 12)
+else
+	statsDivider = filters:CreateTexture(nil, "ARTWORK")
+	statsDivider:SetTexture("Interface\\Tooltips\\UI-Tooltip-Border")
+	statsDivider:SetTexCoord(0, 0.125, 0, 1)
+	statsDivider:SetVertexColor(TOOLTIP_DEFAULT_COLOR.r, TOOLTIP_DEFAULT_COLOR.g, TOOLTIP_DEFAULT_COLOR.b)
+	statsDivider:SetWidth(16)
+	-- the border piece's line runs down its left side
+	statsDivider:SetPoint("TOPLEFT", filters, "TOPLEFT", 210, -12)
+	statsDivider:SetPoint("BOTTOMLEFT", filters, "BOTTOMLEFT", 210, 12)
+end
 
 local statsLabel = RAH.CreateLabel(filters, "Stats", "GameFontNormalSmall")
 statsLabel:SetPoint("TOPLEFT", filters, "TOPLEFT", 226, -14)
