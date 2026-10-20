@@ -424,3 +424,19 @@ No global protocol version bump is needed for this additive command.
 
 CI checks both the standalone fallback and the shared-header integration against the pinned core,
 using the exact merged bot catalog commit as an extra module header dependency.
+
+## Authoritative BiS buyer offers
+
+With the matching bot API, Sell suggestions, item/disenchant tooltips and K/KC craft-price
+responses consume the bot's own `BuyerOffer` rather than mirroring BiS pricing math. Offers
+are gross copper per unit and inclusive, at the configured fraction of the stable reference.
+The viewer's actual auction house is passed through all three paths. The buyer's guards and
+unavailable-reference decisions remain authoritative. Older bot headers/providers retain
+the original legacy range service. A version macro distinguishes the new optional API.
+
+KD row flag 8 marks items handled by the new buyer policy. Updated professions clients use
+that actual offer (after fees), rather than the larger seller reference, for profit ranking.
+KC appends optional field11 with exact net buyer proceeds, computed via the core's
+GetAuctionCut rather than duplicating floating-point/fee rounding in Lua. K keeps its
+legacy row shape. Older clients ignore the appended field; no global protocol version change. Deploy bot, RetailAH and the professions
+addon together; purchase timing remains governed by the existing buyer cycles and limits.

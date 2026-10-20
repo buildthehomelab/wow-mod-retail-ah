@@ -6,6 +6,7 @@
  *   K:<req>:<entry>,<entry>,...   at most MAX_ENTRIES (live listings)
  *   KC:<req>:<entry>,...         cached bot reference, no live-auction scan
  *                              KD adds field 10: reference copper/unit (0 unavailable)
+ *                              and field 11: exact net buyer proceeds per unit
  *                              ERR unknown when optional provider/stable seller is absent
  *   KC quotes are estimates, not stock counts, buyable offers or completed sales.
  *     -> KR:<req>:<house cut %>:<history days>
@@ -22,6 +23,7 @@
  * - Traded: every auction of the item that sold in the last HISTORY_DAYS days, to anyone, read
  *   from the gold ledger at startup and kept up in memory since. Without the ledger only what
  *   sold since startup.
+ * - flags 8: authoritative BiS buyer policy; craft profits should use bot pays, not reference.
  * - flags 1: the era gate hides the item from this player and they own none, so no auction
  *   prices. The level gate doesn't apply: a crafter prices what they make, whatever level it
  *   needs. flags 2: it binds when picked up (or is a quest item), so it can't be auctioned.
@@ -58,6 +60,7 @@ namespace RetailAH::CraftPrices
         {
             ROW_LOCKED = 0x1,
             ROW_SOULBOUND = 0x2,
+            ROW_REFERENCE_BUYER = 0x8,
         };
 
         struct Trade
@@ -221,7 +224,10 @@ namespace RetailAH::CraftPrices
             uint64 tradedUnits = 0, tradedCopper = 0;
             if (!price.locked)
             {
-                AhBot::BuyRange(proto, botAlways, botUpTo);
+                bool referenceBuyer = false;
+                AhBot::BuyRange(proto, botAlways, botUpTo, houseEntry, &referenceBuyer);
+                if (referenceBuyer)
+                    flags |= ROW_REFERENCE_BUYER;
                 auto hist = sHistory.find(entry);
                 if (hist != sHistory.end())
                 {
@@ -239,9 +245,18 @@ namespace RetailAH::CraftPrices
             if (catalog && !price.locked && !(flags & ROW_SOULBOUND))
                 quote = AhBotPriceCatalog::Quote(entry, uint32(houseEntry->houseId));
 #endif
+            uint64 botNet = 0;
+            if ((flags & ROW_REFERENCE_BUYER) && botAlways > 0 && botAlways <= UINT32_MAX)
+            {
+                AuctionEntry settlement{};
+                settlement.bid = uint32(botAlways);
+                settlement.auctionHouseEntry = houseEntry;
+                uint32 fee = settlement.GetAuctionCut();
+                botNet = botAlways > fee ? botAlways - fee : 0;
+            }
             rows.push_back(std::to_string(entry) + "," + std::to_string(price.lowest) + "," + std::to_string(price.units) + ","
                 + std::to_string(botAlways) + "," + std::to_string(vendor) + "," + std::to_string(proto->SellPrice) + ","
-                + std::to_string(tradedUnits) + "," + std::to_string(tradedCopper) + "," + std::to_string(flags) + (catalog ? "," + std::to_string(quote) : ""));
+                + std::to_string(tradedUnits) + "," + std::to_string(tradedCopper) + "," + std::to_string(flags) + (catalog ? "," + std::to_string(quote) + "," + std::to_string(botNet) : ""));
         }
 
         Send(player, "KR:" + ctx.req + ":" + std::to_string(houseEntry->cutPercent * sWorld->getRate(RATE_AUCTION_CUT)) + ":" + std::to_string(HISTORY_DAYS));

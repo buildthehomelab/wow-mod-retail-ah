@@ -24,6 +24,12 @@
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "AuctionHouseMgr.h"
+#if __has_include("AuctionHouseBotPriceCatalog.h")
+#include "AuctionHouseBotPriceCatalog.h"
+#elif __has_include("../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h")
+#include "../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h"
+#endif
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -449,12 +455,26 @@ namespace RetailAH::AhBot
         return sSettings.bots.count(guid) != 0;
     }
 
-    bool BuyRange(ItemTemplate const* proto, uint64& always, uint64& upTo)
+    bool BuyRange(ItemTemplate const* proto, uint64& always, uint64& upTo, AuctionHouseEntry const* house, bool* referenceBuyer)
     {
         always = upTo = 0;
+        if (referenceBuyer)
+            *referenceBuyer = false;
         if (!proto || !BuyerEnabled())
             return false;
 
+#ifdef AH_BOT_PRICE_CATALOG_BUYER_V1
+        std::uint64_t offer = 0;
+        if (house && AhBotPriceCatalog::BuyerOffer(proto->ItemId, house->houseId, offer))
+        {
+            always = upTo = offer;
+            if (referenceBuyer)
+                *referenceBuyer = true;
+            return offer > 0;
+        }
+#else
+        (void)house;
+#endif
         // The bot compares a vendor item's whole buyout with what one copy sells to a vendor
         // for: it only ever buys those at vendor price, which isn't worth an auction.
         if (sSettings.preventOverpaying && proto->SellPrice > 0 && sVendorItems.count(proto->ItemId))
@@ -486,7 +506,7 @@ namespace RetailAH::AhBot
         }
 
         uint64 always = 0, upTo = 0;
-        BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo);
+        BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo, ctx.houseEntry);
         Send(ctx.player, "V:" + ctx.req + ":" + std::to_string(always) + ":" + std::to_string(upTo));
     }
 }
