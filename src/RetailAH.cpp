@@ -276,7 +276,7 @@ namespace RetailAH
 
             // The profession window asks for prices wherever the player is, so this one needs no
             // auctioneer. A request looks up at most 40 items; half the cost of a search.
-            if (command == "K")
+            if (command == "K" || command == "KC")
             {
                 if (!sConfig.craftPrices)
                     SendError(ctx, "unknown");
