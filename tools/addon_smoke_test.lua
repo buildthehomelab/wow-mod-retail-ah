@@ -23,6 +23,10 @@ local function report(where, err)
 	print(debug.traceback())
 end
 
+-- Stock 3.3.5a tooltip colors used by the current filter panel.
+TOOLTIP_DEFAULT_BACKGROUND_COLOR = { r = 0.09, g = 0.09, b = 0.19 }
+TOOLTIP_DEFAULT_COLOR = { r = 1, g = 1, b = 1 }
+
 -- Frames: tables with scripts; unknown methods are no-ops returning nil.
 local frameMeta = {}
 local allFrames = {}

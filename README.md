@@ -404,3 +404,20 @@ Author: [buildthehomelab](https://github.com/buildthehomelab)
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Shared bot references for professions
+
+The additive `KC:<req>:<item>,...` request accepts the same maximum 40 entries as `K`,
+returns `KR/KD/KE`, and appends a tenth KD column: bot seller reference copper per unit.
+It reads mod-ah-bot-plus's optional `AuctionHouseBotPriceCatalog.h` API from the sibling
+`modules/mod-ah-bot-plus` folder. The provider uses the seller's own cached calculation,
+so there is no mirrored seller formula or database price table. Both modules must use
+the normal static worldserver build. Stable seller pricing must be enabled. Unsupported
+builds or disabled stable selling return `ERR:<req>:unknown`, allowing legacy K fallback.
+
+KC never traverses the live auction list; lowest-buyout and listed-unit columns are zero.
+Vendor prices, existing buyer estimates, sales history and per-character progression/
+binding gates remain available. The KR cut includes the realm auction-cut rate. References
+are estimates for future bot listings, not availability or guaranteed sales. The original
+K command remains the live-market service with its unchanged nine-column KD rows.
+No global protocol version bump is needed for this additive command.

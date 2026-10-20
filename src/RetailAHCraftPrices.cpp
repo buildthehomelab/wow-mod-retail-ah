@@ -3,7 +3,11 @@
  * suggests what to craft and sell. Asked from the profession window, so no auctioneer is needed;
  * the prices are the house of the player's own faction (the neutral one with two-side trading).
  *
- *   K:<req>:<entry>,<entry>,...   at most MAX_ENTRIES
+ *   K:<req>:<entry>,<entry>,...   at most MAX_ENTRIES (live listings)
+ *   KC:<req>:<entry>,...         cached bot reference, no live-auction scan
+ *                              KD adds field 10: reference copper/unit (0 unavailable)
+ *                              ERR unknown when optional provider/stable seller is absent
+ *   KC quotes are estimates, not stock counts, buyable offers or completed sales.
  *     -> KR:<req>:<house cut %>:<history days>
  *        KD rows <entry>,<lowest buyout per unit>,<units listed>,<AH bot pays>,<vendor price>,
  *                <vendor pays>,<units traded>,<copper traded>,<flags>
@@ -30,6 +34,12 @@
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "World.h"
+#include "Config.h"
+#if __has_include("../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h")
+#include "../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h"
+#define RETAIL_AH_SHARED_BOT_CATALOG 1
+#endif
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
@@ -126,6 +136,20 @@ namespace RetailAH::CraftPrices
 
     void HandlePrices(Context& ctx, std::vector<std::string_view> const& args)
     {
+        if (args[0] == "KC")
+        {
+#ifdef RETAIL_AH_SHARED_BOT_CATALOG
+            if (!AhBotPriceCatalog::provider
+                || !sConfigMgr->GetOption<bool>("AuctionHouseBot.Seller.StablePrices", false, false)
+                || !sConfigMgr->GetOption<bool>("AuctionHouseBot.EnableSeller", false, false))
+#else
+            if (true)
+#endif
+            {
+                SendError(ctx, "unknown");
+                return;
+            }
+        }
         Player* player = ctx.player;
         AuctionHouseEntry const* houseEntry = AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate(player->GetFaction());
         AuctionHouseObject* house = sAuctionMgr->GetAuctionsMap(player->GetFaction());
@@ -162,6 +186,9 @@ namespace RetailAH::CraftPrices
             order.push_back(entry);
         }
 
+        bool const catalog = args[0] == "KC";
+        // Catalog requests never walk the auctions. K retains the live-market view.
+        if (!catalog)
         for (auto const& [id, auction] : house->GetAuctions())
         {
             if (!auction->buyout)
@@ -204,12 +231,17 @@ namespace RetailAH::CraftPrices
                 }
             }
 
+            uint64 quote = 0;
+#ifdef RETAIL_AH_SHARED_BOT_CATALOG
+            if (catalog && !price.locked && !(flags & ROW_SOULBOUND))
+                quote = AhBotPriceCatalog::Quote(entry, uint32(houseEntry->houseId));
+#endif
             rows.push_back(std::to_string(entry) + "," + std::to_string(price.lowest) + "," + std::to_string(price.units) + ","
                 + std::to_string(botAlways) + "," + std::to_string(vendor) + "," + std::to_string(proto->SellPrice) + ","
-                + std::to_string(tradedUnits) + "," + std::to_string(tradedCopper) + "," + std::to_string(flags));
+                + std::to_string(tradedUnits) + "," + std::to_string(tradedCopper) + "," + std::to_string(flags) + (catalog ? "," + std::to_string(quote) : ""));
         }
 
-        Send(player, "KR:" + ctx.req + ":" + std::to_string(houseEntry->cutPercent) + ":" + std::to_string(HISTORY_DAYS));
+        Send(player, "KR:" + ctx.req + ":" + std::to_string(houseEntry->cutPercent * sWorld->getRate(RATE_AUCTION_CUT)) + ":" + std::to_string(HISTORY_DAYS));
         SendRows(player, "KD:" + ctx.req, rows);
         Send(player, "KE:" + ctx.req);
     }
