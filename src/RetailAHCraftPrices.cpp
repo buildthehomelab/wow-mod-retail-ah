@@ -22,6 +22,7 @@
  * - Traded: every auction of the item that sold in the last HISTORY_DAYS days, to anyone, read
  *   from the gold ledger at startup and kept up in memory since. Without the ledger only what
  *   sold since startup.
+ * - flags 8: authoritative BiS buyer policy; craft profits should use bot pays, not reference.
  * - flags 1: the era gate hides the item from this player and they own none, so no auction
  *   prices. The level gate doesn't apply: a crafter prices what they make, whatever level it
  *   needs. flags 2: it binds when picked up (or is a quest item), so it can't be auctioned.
@@ -58,6 +59,7 @@ namespace RetailAH::CraftPrices
         {
             ROW_LOCKED = 0x1,
             ROW_SOULBOUND = 0x2,
+            ROW_REFERENCE_BUYER = 0x8,
         };
 
         struct Trade
@@ -221,7 +223,10 @@ namespace RetailAH::CraftPrices
             uint64 tradedUnits = 0, tradedCopper = 0;
             if (!price.locked)
             {
-                AhBot::BuyRange(proto, botAlways, botUpTo);
+                bool referenceBuyer = false;
+                AhBot::BuyRange(proto, botAlways, botUpTo, houseEntry, &referenceBuyer);
+                if (referenceBuyer)
+                    flags |= ROW_REFERENCE_BUYER;
                 auto hist = sHistory.find(entry);
                 if (hist != sHistory.end())
                 {

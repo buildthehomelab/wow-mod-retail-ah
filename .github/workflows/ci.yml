@@ -29,4 +29,4 @@ jobs:
       packages: read
     with:
       only: cpp
-      extra-modules: buildthehomelab/wow-mod-ah-bot-plus@c5884b76cedde344ee10c5aba63f00ac0f73ca74
+      extra-modules: buildthehomelab/wow-mod-ah-bot-plus@50f1c4681a64ee9f78f02c80d8c368e167fbd5c5

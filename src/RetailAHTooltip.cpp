@@ -19,6 +19,7 @@
  */
 
 #include "RetailAH.h"
+#include "AuctionHouseMgr.h"
 #include "DatabaseEnv.h"
 #include "ItemTemplate.h"
 #include "Log.h"
@@ -60,10 +61,10 @@ namespace RetailAH::Tooltip
                 && (proto->Class == ITEM_CLASS_WEAPON || proto->Class == ITEM_CLASS_ARMOR);
         }
 
-        uint64 BotPays(uint32 entry)
+        uint64 BotPays(uint32 entry, AuctionHouseEntry const* house)
         {
             uint64 always = 0, upTo = 0;
-            AhBot::BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo);
+            AhBot::BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo, house);
             return always;
         }
     }
@@ -139,6 +140,7 @@ namespace RetailAH::Tooltip
 
         Player* player = ctx.player;
         uint32 const enchanting = player->GetSkillValue(SKILL_ENCHANTING);
+        auto house = AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate(player->GetFaction());
 
         std::vector<std::string> rows;
         std::unordered_set<uint32> seen;
@@ -154,7 +156,7 @@ namespace RetailAH::Tooltip
                 continue;
 
             uint32 flags = proto->Bonding == BIND_WHEN_PICKED_UP || proto->Bonding == BIND_QUEST_ITEM ? ROW_SOULBOUND : 0;
-            uint64 pays = flags & ROW_SOULBOUND ? 0 : BotPays(entry);
+            uint64 pays = flags & ROW_SOULBOUND ? 0 : BotPays(entry, house);
 
             uint64 disenchanted = 0;
             uint32 skill = 0;
@@ -169,7 +171,7 @@ namespace RetailAH::Tooltip
                 {
                     double value = 0;
                     for (Yield const& yield : itr->second)
-                        value += yield.count * double(BotPays(yield.item));
+                        value += yield.count * double(BotPays(yield.item, house));
                     disenchanted = uint64(value);
                 }
             }

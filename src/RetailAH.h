@@ -318,7 +318,8 @@ namespace RetailAH
         bool IsBot(ObjectGuid::LowType guid);
         // The per-unit buyouts the buyer takes: at or below `always` on every look, at or below
         // `upTo` on its luckiest roll. False when it never buys this item.
-        bool BuyRange(ItemTemplate const* proto, uint64& always, uint64& upTo);
+        bool BuyRange(ItemTemplate const* proto, uint64& always, uint64& upTo,
+            AuctionHouseEntry const* house = nullptr, bool* referenceBuyer = nullptr);
         void HandleValue(Context& ctx, std::vector<std::string_view> const& args);
     }
 
