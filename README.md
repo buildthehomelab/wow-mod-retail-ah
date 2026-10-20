@@ -436,5 +436,7 @@ the original legacy range service. A version macro distinguishes the new optiona
 
 KD row flag 8 marks items handled by the new buyer policy. Updated professions clients use
 that actual offer (after fees), rather than the larger seller reference, for profit ranking.
-No row shape or global protocol version changes. Deploy bot, RetailAH and the professions
+KC appends optional field11 with exact net buyer proceeds, computed via the core's
+GetAuctionCut rather than duplicating floating-point/fee rounding in Lua. K keeps its
+legacy row shape. Older clients ignore the appended field; no global protocol version change. Deploy bot, RetailAH and the professions
 addon together; purchase timing remains governed by the existing buyer cycles and limits.

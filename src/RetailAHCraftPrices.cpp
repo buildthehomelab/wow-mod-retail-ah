@@ -6,6 +6,7 @@
  *   K:<req>:<entry>,<entry>,...   at most MAX_ENTRIES (live listings)
  *   KC:<req>:<entry>,...         cached bot reference, no live-auction scan
  *                              KD adds field 10: reference copper/unit (0 unavailable)
+ *                              and field 11: exact net buyer proceeds per unit
  *                              ERR unknown when optional provider/stable seller is absent
  *   KC quotes are estimates, not stock counts, buyable offers or completed sales.
  *     -> KR:<req>:<house cut %>:<history days>
@@ -244,9 +245,18 @@ namespace RetailAH::CraftPrices
             if (catalog && !price.locked && !(flags & ROW_SOULBOUND))
                 quote = AhBotPriceCatalog::Quote(entry, uint32(houseEntry->houseId));
 #endif
+            uint64 botNet = 0;
+            if ((flags & ROW_REFERENCE_BUYER) && botAlways > 0 && botAlways <= UINT32_MAX)
+            {
+                AuctionEntry settlement{};
+                settlement.bid = uint32(botAlways);
+                settlement.auctionHouseEntry = houseEntry;
+                uint32 fee = settlement.GetAuctionCut();
+                botNet = botAlways > fee ? botAlways - fee : 0;
+            }
             rows.push_back(std::to_string(entry) + "," + std::to_string(price.lowest) + "," + std::to_string(price.units) + ","
                 + std::to_string(botAlways) + "," + std::to_string(vendor) + "," + std::to_string(proto->SellPrice) + ","
-                + std::to_string(tradedUnits) + "," + std::to_string(tradedCopper) + "," + std::to_string(flags) + (catalog ? "," + std::to_string(quote) : ""));
+                + std::to_string(tradedUnits) + "," + std::to_string(tradedCopper) + "," + std::to_string(flags) + (catalog ? "," + std::to_string(quote) + "," + std::to_string(botNet) : ""));
         }
 
         Send(player, "KR:" + ctx.req + ":" + std::to_string(houseEntry->cutPercent * sWorld->getRate(RATE_AUCTION_CUT)) + ":" + std::to_string(HISTORY_DAYS));
