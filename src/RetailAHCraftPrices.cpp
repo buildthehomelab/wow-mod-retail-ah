@@ -36,7 +36,10 @@
 #include "Player.h"
 #include "World.h"
 #include "Config.h"
-#if __has_include("../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h")
+#if __has_include("AuctionHouseBotPriceCatalog.h")
+#include "AuctionHouseBotPriceCatalog.h"
+#define RETAIL_AH_SHARED_BOT_CATALOG 1
+#elif __has_include("../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h")
 #include "../../mod-ah-bot-plus/src/AuctionHouseBotPriceCatalog.h"
 #define RETAIL_AH_SHARED_BOT_CATALOG 1
 #endif

@@ -21,3 +21,12 @@ jobs:
 #   with:
 #     module: mod-foo          # only if the server folder isn't the repo name minus "wow-"
 #     lua-exclude: "Astrolabe/**"
+
+  catalog-integration:
+    uses: buildthehomelab/wow-ci/.github/workflows/ci.yml@main
+    permissions:
+      contents: read
+      packages: read
+    with:
+      only: cpp
+      extra-modules: buildthehomelab/wow-mod-ah-bot-plus@c5884b76cedde344ee10c5aba63f00ac0f73ca74
