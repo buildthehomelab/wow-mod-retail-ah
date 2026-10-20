@@ -506,8 +506,7 @@ namespace RetailAH::AhBot
         }
 
         uint64 always = 0, upTo = 0;
-        BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo,
-            AuctionHouseMgr::GetAuctionHouseEntryFromFactionTemplate(ctx.player->GetFaction()));
+        BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo, ctx.houseEntry);
         Send(ctx.player, "V:" + ctx.req + ":" + std::to_string(always) + ":" + std::to_string(upTo));
     }
 }
