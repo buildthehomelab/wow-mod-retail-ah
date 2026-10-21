@@ -352,13 +352,34 @@ local function hideCompare()
 	if ShoppingTooltip3 then ShoppingTooltip3:Hide() end
 end
 
+-- The 3.3.5 client crashes (#132 at 0x00620727) when it compares against worn gear whose item
+-- record isn't in its cache yet, which is common right after the cache is wiped. Anything
+-- missing is asked for; ITEM_INFO compares once it has arrived.
+local function compareReady()
+	local _, link = GameTooltip:GetItem()
+	local ready = not link or GetItemInfo(link) ~= nil
+	if not ready then askClient(link:match("item:[%-%d:]+")) end
+	for slot = 1, 19 do
+		local worn = GetInventoryItemID("player", slot)
+		if worn and not GetItemInfo(worn) then
+			askClient(worn)
+			ready = false
+		end
+	end
+	return ready
+end
+
+local function compare()
+	if compareReady() then GameTooltip_ShowCompareItem() end
+end
+
 function RAH.ItemTooltip(owner, link, extra)
 	tipOwner = owner
 	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 	GameTooltip:SetHyperlink(link)
 	if extra then extra(GameTooltip) end
 	GameTooltip:Show()
-	if wantCompare() then GameTooltip_ShowCompareItem() end
+	if wantCompare() then compare() end
 end
 
 function RAH.HideItemTooltip()
@@ -372,7 +393,11 @@ local modifierFrame = CreateFrame("Frame")
 modifierFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
 modifierFrame:SetScript("OnEvent", function ()
 	if not tipOwner or not GameTooltip:IsShown() or not GameTooltip:IsOwned(tipOwner) then return end
-	if wantCompare() then GameTooltip_ShowCompareItem() else hideCompare() end
+	if wantCompare() then compare() else hideCompare() end
+end)
+RAH.On("ITEM_INFO", function ()
+	if not tipOwner or not GameTooltip:IsShown() or not GameTooltip:IsOwned(tipOwner) then return end
+	if wantCompare() and not ShoppingTooltip1:IsShown() then compare() end
 end)
 
 function RAH.QualityColor(quality)
