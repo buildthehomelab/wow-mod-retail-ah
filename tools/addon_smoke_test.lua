@@ -190,6 +190,9 @@ function GetItemInfo(item)
 	return d[1], "|cffffffff|Hitem:" .. entry .. ":0:0:0:0:0:0:0:0|h[" .. d[1] .. "]|h|r", d[2], d[3], 1, "Trade Goods", "Cloth", d[4], "", "Interface\\Icons\\X", d[5]
 end
 
+local worn = {}
+function GetInventoryItemID(_, slot) return worn[slot] end
+
 local bags = { [0] = { [1] = { 2589, 20 }, [2] = { 2589, 7 }, [3] = { 15210, 1 } } }
 function GetContainerNumSlots(bag) return bag == 0 and 16 or 0 end
 function GetContainerItemLink(bag, slot)
@@ -505,6 +508,20 @@ step("hovering an item compares with equipped gear only while Shift is held", fu
 	row.__scripts.OnLeave(row)
 	SlashCmdList.RETAILAH("compare off")
 	assert(not RetailAHDB.alwaysCompare, "compare off did not go back to Shift only")
+	-- Worn gear the client hasn't cached: no compare (the 3.3.5 client crashes) until it arrives.
+	before = compared
+	worn[16] = 99999
+	IsModifiedClick = function () return true end
+	GameTooltip.IsOwned = function (tip, owner) return owner == row end
+	GameTooltip.IsShown = function () return true end
+	row.__scripts.OnEnter(row)
+	assert(compared == before, "compared against worn gear the client hasn't cached")
+	itemDB[99999] = { "Worn Blade", 2, 20, 1, 100, 2 }
+	RAH.Fire("ITEM_INFO")
+	assert(compared == before + 1, "no compare once the worn gear was cached")
+	IsModifiedClick, GameTooltip.IsOwned, GameTooltip.IsShown = isModified, isOwned, isShown
+	row.__scripts.OnLeave(row)
+	worn[16], itemDB[99999] = nil, nil
 end)
 step("repeated search shows cached results at once", function ()
 	RAH.Buy.Search()
