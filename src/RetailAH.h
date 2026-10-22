@@ -248,6 +248,7 @@ namespace RetailAH
         void CheckTable();
         bool Enabled();
         uint32 Stored(Player const* player, uint32 entry);
+        bool Postable(ItemTemplate const* proto);
         std::vector<std::pair<uint32, uint32>> Contents(Player const* player);
         void Take(Player const* player, uint32 entry, uint32 count, CharacterDatabaseTransaction trans);
         void NotifyChanged(Player* player);
