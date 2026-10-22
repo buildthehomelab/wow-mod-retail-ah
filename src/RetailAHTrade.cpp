@@ -448,11 +448,14 @@ namespace RetailAH
 
         // Creates one auction from reagent bank units, doing what the sell handler does for items
         // from the bags: deposit, auction and item rows, achievement, logs. The bank row is
-        // debited in the same transaction, committed synchronously: requests arrive as addon
-        // whispers (CMSG_MESSAGECHAT, THREADUNSAFE) on the world thread, and the stock check
-        // here, the next PC request and .rbank all read the table with a synchronous query.
-        // With an async commit, two requests in one tick both saw the full stock and listed it
-        // twice, and a withdraw right after a post paid out units already on the AH.
+        // debited in the same transaction, and the request waits until it is committed:
+        // requests arrive as addon whispers (CMSG_MESSAGECHAT, THREADUNSAFE) on the world
+        // thread, and the stock check here, the next PC request and .rbank all read the table
+        // with a synchronous query. Without the wait, two requests in one tick both saw the
+        // full stock and listed it twice, and a withdraw right after a post paid out units
+        // already on the AH. The item, auction and inventory statements are prepared on the
+        // async connections only, so the commit goes through the async pool:
+        // DirectCommitTransaction runs on a sync connection, where they don't exist, and asserts.
         uint32 PostFromBank(Context const& ctx, ItemTemplate const* proto, uint32 count, uint32 bid, uint32 buyout, uint32 hours)
         {
             Player* player = ctx.player;
@@ -510,7 +513,8 @@ namespace RetailAH
             auction->SaveToDB(trans);
             ReagentBank::Take(player, proto->ItemId, count, trans);
             player->SaveInventoryAndGoldToDB(trans);
-            CharacterDatabase.DirectCommitTransaction(trans);
+            if (!CharacterDatabase.AsyncCommitTransaction(trans).m_future.get())
+                LOG_ERROR("module", "RetailAH: saving auction {} posted from the reagent bank failed.", auction->Id);
 
             sAuctionMgr->AddAItem(item);
             ctx.house->AddAuction(auction);

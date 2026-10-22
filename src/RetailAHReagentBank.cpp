@@ -111,7 +111,7 @@ namespace RetailAH::ReagentBank
 
     // Relative, so a write the reagent bank has made in between still adds up. amount is
     // INT UNSIGNED, so it is clamped at 0 rather than subtracted below it (an error in strict
-    // mode). The caller commits synchronously; see PostFromBank.
+    // mode). The caller waits for the commit; see PostFromBank.
     void Take(Player const* player, uint32 entry, uint32 count, CharacterDatabaseTransaction trans)
     {
         Keys keys = KeysFor(player);
