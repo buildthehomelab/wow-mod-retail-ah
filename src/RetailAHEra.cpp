@@ -24,7 +24,8 @@
  *      over 300 (375) or flying riding skill, means TBC (WotLK). Every socket gem is TBC or
  *      later. A container holding only floored items gets the easiest of their floors.
  *   4. Override rows replace all of the above (state 0 = always visible): mod_retail_ah_item_era,
- *      and mod-ah-progression's mod_ah_progression_item when it is still there.
+ *      and mod-ah-progression's mod_ah_progression_item when it is still there. Derived sources
+ *      see the override, so a craft made from an overridden reagent follows it.
  *
  * Professions are gated by skill tier, not by profession: jewelcrafting, inscription,
  * prospecting and milling all work from the start, but a craft needing more than 300 skill
@@ -358,6 +359,29 @@ namespace RetailAH::Era
 
         ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
         std::unordered_map<uint32, Candidate> direct;
+
+        // Manual overrides, read first so what is crafted from or contained in an overridden
+        // item follows it. mod-ah-progression's table first, so a server moving over keeps its
+        // rows; ours wins.
+        std::unordered_map<uint32, uint8> overrides;
+        for (char const* overrideTable : { "mod_ah_progression_item", "mod_retail_ah_item_era" })
+        {
+            if (!TableExists(overrideTable))
+                continue;
+            QueryResult result = WorldDatabase.Query("SELECT entry, state FROM {}", overrideTable);
+            if (!result)
+                continue;
+            do
+            {
+                Field* fields = result->Fetch();
+                overrides[fields[0].Get<uint32>()] = std::min<uint8>(fields[1].Get<uint8>(), STATE_MAX);
+            } while (result->NextRow());
+        }
+        auto applyOverrides = [&](std::unordered_map<uint32, Candidate>& values)
+        {
+            for (auto const& [entry, state] : overrides)
+                values[entry] = { state, Reason::Override, entry };
+        };
 
         if (cfg.deriveFromSources)
         {
@@ -847,6 +871,7 @@ namespace RetailAH::Era
             };
 
             std::unordered_map<uint32, Candidate> values = direct;
+            applyOverrides(values);
             uint32 rounds = 0;
             for (; rounds < 12; ++rounds)
             {
@@ -906,6 +931,7 @@ namespace RetailAH::Era
                     if (!existing.Known())
                         existing = candidate;
                 }
+                applyOverrides(next);
 
                 bool changed = next.size() != values.size();
                 if (!changed)
@@ -954,26 +980,13 @@ namespace RetailAH::Era
                 table->items[item] = { std::min<uint8>(candidate.state, STATE_MAX), candidate.reason, candidate.source };
 
         // ---- 6. Manual overrides ----------------------------------------------------------------
-        // mod-ah-progression's table first, so a server moving over keeps its rows; ours wins.
-        uint32 overrides = 0;
-        for (char const* overrideTable : { "mod_ah_progression_item", "mod_retail_ah_item_era" })
+        // Again here: floors (and a server without derived sources) never beat an override row.
+        for (auto const& [entry, state] : overrides)
         {
-            if (!TableExists(overrideTable))
-                continue;
-            QueryResult result = WorldDatabase.Query("SELECT entry, state FROM {}", overrideTable);
-            if (!result)
-                continue;
-            do
-            {
-                Field* fields = result->Fetch();
-                uint32 entry = fields[0].Get<uint32>();
-                uint8 state = std::min<uint8>(fields[1].Get<uint8>(), STATE_MAX);
-                if (state == STATE_START)
-                    table->items.erase(entry);
-                else
-                    table->items[entry] = { state, Reason::Override, entry };
-                ++overrides;
-            } while (result->NextRow());
+            if (state == STATE_START)
+                table->items.erase(entry);
+            else
+                table->items[entry] = { state, Reason::Override, entry };
         }
 
         std::array<uint32, STATE_MAX + 1> perState{};
@@ -994,7 +1007,7 @@ namespace RetailAH::Era
         }
 
         LOG_INFO("module", "mod-retail-ah: {} era-gated items ({} overrides) in {} ms. Per state:{}",
-            table->items.size(), overrides, GetMSTimeDiffToNow(startTime), summary);
+            table->items.size(), overrides.size(), GetMSTimeDiffToNow(startTime), summary);
     }
 
     char const* StateName(uint8 state)
