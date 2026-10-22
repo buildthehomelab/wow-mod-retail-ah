@@ -49,6 +49,7 @@ namespace RetailAH::Era
     enum class Reason : uint8
     {
         Override,     // mod_retail_ah_item_era (or mod_ah_progression_item) row
+        DataFix,      // built-in fix for an AzerothCore loot quirk; source = item
         Creature,     // creature loot / pickpocket / skinning; source = creature entry
         GameObject,   // chest or gathering node; source = gameobject entry
         Fishing,      // fishing loot; source = zone/area id

@@ -197,7 +197,11 @@ state from **where it can be obtained**, and takes the easiest source:
    skill, recipes included, are TBC (WotLK), and so are flying mounts. A container that holds
    only floored items gets the easiest of their floors.
 4. **Overrides.** A row in `mod_retail_ah_item_era` (world DB, created at startup) replaces all
-   of the above. Rows in mod-ah-progression's old `mod_ah_progression_item` are read too.
+   of the above. Rows in mod-ah-progression's old `mod_ah_progression_item` are read too. The
+   module also carries a short built-in list for AzerothCore loot data that puts later items in
+   old-world tables (Knothide Leather on an Alterac Valley creature, Outland potions in level 60
+   pickpocket loot, Outland fish in Deadwind Pass); a table row still wins over it. Crafts and
+   container contents follow an override, unless their own floor is higher.
 
 Professions are gated by tier, not by profession: jewelcrafting, inscription, prospecting and
 milling work from the start, so low-level cut gems, inks and glyphs are visible to everyone.
