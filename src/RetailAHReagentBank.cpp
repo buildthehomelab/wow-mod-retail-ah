@@ -16,6 +16,7 @@
 #include "Config.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "WorldSession.h"
 
@@ -120,6 +121,16 @@ namespace RetailAH::ReagentBank
             keys.account, keys.guid, entry);
     }
 
+    // Bank stock has no item instance, so Postable's instance checks can't run on it, and
+    // PostFromBank creates a fresh, unbound item. These are the same checks on the template:
+    // soulbound or quest items in the bank (stored before the bank refused them, or listed
+    // on purpose like archaeology keystones) must not reach the auction house.
+    bool Postable(ItemTemplate const* proto)
+    {
+        return proto && proto->Bonding != BIND_WHEN_PICKED_UP && proto->Bonding != BIND_QUEST_ITEM
+            && !proto->HasFlag(ITEM_FLAG_CONJURED) && !proto->Duration;
+    }
+
     // ReagentBankUI reloads its window on this line (and hides it from chat).
     void NotifyChanged(Player* player)
     {
@@ -131,7 +142,8 @@ namespace RetailAH::ReagentBank
     {
         std::vector<std::string> rows;
         for (auto const& [entry, amount] : Contents(ctx.player))
-            rows.push_back(std::to_string(entry) + "," + std::to_string(amount));
+            if (Postable(sObjectMgr->GetItemTemplate(entry)))
+                rows.push_back(std::to_string(entry) + "," + std::to_string(amount));
 
         Send(ctx.player, "RR:" + ctx.req);
         SendRows(ctx.player, "RD:" + ctx.req, rows);

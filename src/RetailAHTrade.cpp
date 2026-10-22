@@ -416,7 +416,7 @@ namespace RetailAH
             if (!IsCommodity(out.proto))
                 return false;
             out.bagUnits = CountUnits(BagItems(ctx.player, ItemKind(out.proto->ItemId)));
-            out.bankUnits = useBank ? ReagentBank::Stored(ctx.player, out.proto->ItemId) : 0;
+            out.bankUnits = useBank && ReagentBank::Postable(out.proto) ? ReagentBank::Stored(ctx.player, out.proto->ItemId) : 0;
             return true;
         }
 
@@ -459,7 +459,7 @@ namespace RetailAH
             WorldSession* session = player->GetSession();
             if (sWorld->getBoolConfig(CONFIG_TRIAL_RESTRICTION_AUCTION) && session->IsTrialAccount())
                 return 0;
-            if (ReagentBank::Stored(player, proto->ItemId) < count)
+            if (!ReagentBank::Postable(proto) || ReagentBank::Stored(player, proto->ItemId) < count)
                 return 0;
 
             uint32 const seconds = hours * HOUR;
