@@ -264,8 +264,10 @@ On the server:
   its price formula (`CalculateItemValue`) with the random roll at its low end (what the buyer
   pays every time) and at its high end (its best roll), times
   `AuctionHouseBot.Buyer.AcceptablePriceModifier`. The buyer buys out when the buyout is below
-  what it's willing to pay, so the price shown is one copper under that. The two modules don't
-  link to each other; the formula is mirrored from mod-ah-bot-plus as of July 2026 (f685832).
+  what it's willing to pay, so the price shown is one copper under that. The formula is mirrored
+  from mod-ah-bot-plus; with buildthehomelab's fork of it
+  ([wow-mod-ah-bot-plus](https://github.com/buildthehomelab/wow-mod-ah-bot-plus), which ships
+  `AuctionHouseBotPriceCatalog.h`), the module uses the bot's own buyer offers instead.
 - **The ledger** comes from the core's auction mail hooks (sale, purchase, expiry), which every
   way of ending an auction goes through: the stock window, this module, the AH bot's buyer and
   the house's own expiry. A cancel is an auction that leaves the house without having sold or
@@ -394,6 +396,19 @@ GM commands on the server:
   still installed and its config is loaded. Remove it from `modules/`.
 - **The addon doesn't load.** The folder must be called `RetailAH` inside `Interface/AddOns`.
 
+## Where the AH bot's prices come from
+
+With buildthehomelab's fork of mod-ah-bot-plus
+([wow-mod-ah-bot-plus](https://github.com/buildthehomelab/wow-mod-ah-bot-plus), which ships
+`AuctionHouseBotPriceCatalog.h`, found on the include path or in a sibling
+`modules/mod-ah-bot-plus` folder), the AH buyer's offers and the bot's seller references (the
+craft-for-profit prices, with `AuctionHouseBot.Seller.StablePrices` on) come from its shared
+price API, so they match what the bot actually does. Both modules must be in the same normal
+static worldserver build for that link-up. With upstream mod-ah-bot-plus, or without that header,
+the module falls back to its own copy of the bot's price formula for buyer offers, and craft
+prices fall back to the live market. The craft-price wire protocol is documented at the top of
+`src/RetailAHCraftPrices.cpp`.
+
 ## Credits
 
 The AH bot price formula mirrors the one in
@@ -404,39 +419,3 @@ Author: [buildthehomelab](https://github.com/buildthehomelab)
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Shared bot references for professions
-
-The additive `KC:<req>:<item>,...` request accepts the same maximum 40 entries as `K`,
-returns `KR/KD/KE`, and appends a tenth KD column: bot seller reference copper per unit.
-It reads mod-ah-bot-plus's optional `AuctionHouseBotPriceCatalog.h` API from module
-include paths or the sibling `modules/mod-ah-bot-plus` folder. The provider uses the seller's own cached calculation,
-so there is no mirrored seller formula or database price table. Both modules must use
-the normal static worldserver build. Stable seller pricing must be enabled. Unsupported
-builds or disabled stable selling return `ERR:<req>:unknown`, allowing legacy K fallback.
-
-KC never traverses the live auction list; lowest-buyout and listed-unit columns are zero.
-Vendor prices, existing buyer estimates, sales history and per-character progression/
-binding gates remain available. The KR cut includes the realm auction-cut rate. References
-are estimates for future bot listings, not availability or guaranteed sales. The original
-K command remains the live-market service with its unchanged nine-column KD rows.
-No global protocol version bump is needed for this additive command.
-
-CI checks both the standalone fallback and the shared-header integration against the pinned core,
-using the exact merged bot catalog commit as an extra module header dependency.
-
-## Authoritative BiS buyer offers
-
-With the matching bot API, Sell suggestions, item/disenchant tooltips and K/KC craft-price
-responses consume the bot's own `BuyerOffer` rather than mirroring BiS pricing math. Offers
-are gross copper per unit and inclusive, at the configured fraction of the stable reference.
-The viewer's actual auction house is passed through all three paths. The buyer's guards and
-unavailable-reference decisions remain authoritative. Older bot headers/providers retain
-the original legacy range service. A version macro distinguishes the new optional API.
-
-KD row flag 8 marks items handled by the new buyer policy. Updated professions clients use
-that actual offer (after fees), rather than the larger seller reference, for profit ranking.
-KC appends optional field11 with exact net buyer proceeds, computed via the core's
-GetAuctionCut rather than duplicating floating-point/fee rounding in Lua. K keeps its
-legacy row shape. Older clients ignore the appended field; no global protocol version change. Deploy bot, RetailAH and the professions
-addon together; purchase timing remains governed by the existing buyer cycles and limits.
