@@ -24,8 +24,10 @@
  *      over 300 (375) or flying riding skill, means TBC (WotLK). Every socket gem is TBC or
  *      later. A container holding only floored items gets the easiest of their floors.
  *   4. Override rows replace all of the above (state 0 = always visible): mod_retail_ah_item_era,
- *      and mod-ah-progression's mod_ah_progression_item when it is still there. Derived sources
- *      see the override, so a craft made from an overridden reagent follows it.
+ *      and mod-ah-progression's mod_ah_progression_item when it is still there, plus a short
+ *      built-in list (DATA_FIXES) for AzerothCore loot data that is wrong. Derived sources see
+ *      them, so a craft made from an overridden reagent or a container's contents follow it;
+ *      an override below an item's floor unlocks the item only, not what is made from it.
  *
  * Professions are gated by skill tier, not by profession: jewelcrafting, inscription,
  * prospecting and milling all work from the start, but a craft needing more than 300 skill
@@ -256,6 +258,34 @@ namespace RetailAH::Era
             std::vector<uint32> reagents;
         };
 
+        // AzerothCore loot data that puts later-era items in old-world tables, so the easiest
+        // source would show them from the start. Treated like override rows (crafts and contents
+        // follow them); a row in the override table still wins. ZA = the Zul'Aman setting.
+        constexpr uint8 STATE_ZUL_AMAN = 0xFE;
+        struct DataFixEntry { uint32 item; uint8 state; };
+        constexpr DataFixEntry DATA_FIXES[] =
+        {
+            // Duros / Drakan, level 60 in Alterac Valley, share skinning tables with their 70/80 copies.
+            { 21887, STATE_PRE_TBC },   // Knothide Leather (Duros)
+            { 25649, STATE_PRE_TBC },   // Knothide Leather Scraps (Duros, Drakan)
+            // Level 60-62 old-world humanoids: Outland items in their pickpocket tables.
+            { 22829, STATE_PRE_TBC },   // Super Healing Potion
+            { 27854, STATE_PRE_TBC },   // Smoked Talbuk Venison
+            { 27859, STATE_PRE_TBC },   // Zangar Caps
+            { 29569, STATE_PRE_TBC },   // Strong Junkbox (level 59-63 pickpocket: Scholomance, ZG, AV...); its contents follow
+            // Level 60-62 Scalebane / Wyrmkin dragonkin share an Outland scroll reference.
+            { 27498, STATE_PRE_TBC },   // Scroll of Agility V
+            { 27499, STATE_PRE_TBC },   // Scroll of Intellect V
+            { 27500, STATE_PRE_TBC },   // Scroll of Protection V
+            { 27501, STATE_PRE_TBC },   // Scroll of Spirit V
+            { 27502, STATE_PRE_TBC },   // Scroll of Stamina V
+            { 27503, STATE_PRE_TBC },   // Scroll of Strength V
+            // Fishing in Deadwind Pass (area 41) lists Outland and Zul'Aman fish.
+            { 27422, STATE_PRE_TBC },   // Barbed Gill Trout
+            { 33823, STATE_ZUL_AMAN },  // Bloodfin Catfish
+            { 33824, STATE_ZUL_AMAN },  // Crescent-Tail Skullfish
+        };
+
         uint8 SkillTierFloor(uint32 skillRank)
         {
             if (skillRank > SKILL_CAP_TBC)
@@ -360,10 +390,14 @@ namespace RetailAH::Era
         ItemTemplateContainer const* items = sObjectMgr->GetItemTemplateStore();
         std::unordered_map<uint32, Candidate> direct;
 
-        // Manual overrides, read first so what is crafted from or contained in an overridden
-        // item follows it. mod-ah-progression's table first, so a server moving over keeps its
-        // rows; ours wins.
-        std::unordered_map<uint32, uint8> overrides;
+        // Overrides, read first so what is crafted from or contained in an overridden item
+        // follows it: built-in data fixes (only when deriving, as they correct derived sources),
+        // then mod-ah-progression's table, so a server moving over keeps its rows; ours wins.
+        std::unordered_map<uint32, Candidate> overrides;
+        if (cfg.deriveFromSources)
+            for (DataFixEntry const& fix : DATA_FIXES)
+                overrides[fix.item] = { std::min<uint8>(fix.state == STATE_ZUL_AMAN ? cfg.zulAmanState : fix.state, STATE_MAX), Reason::DataFix, fix.item };
+        uint32 overrideRows = 0;
         for (char const* overrideTable : { "mod_ah_progression_item", "mod_retail_ah_item_era" })
         {
             if (!TableExists(overrideTable))
@@ -374,13 +408,15 @@ namespace RetailAH::Era
             do
             {
                 Field* fields = result->Fetch();
-                overrides[fields[0].Get<uint32>()] = std::min<uint8>(fields[1].Get<uint8>(), STATE_MAX);
+                uint32 entry = fields[0].Get<uint32>();
+                overrides[entry] = { std::min<uint8>(fields[1].Get<uint8>(), STATE_MAX), Reason::Override, entry };
+                ++overrideRows;
             } while (result->NextRow());
         }
         auto applyOverrides = [&](std::unordered_map<uint32, Candidate>& values)
         {
-            for (auto const& [entry, state] : overrides)
-                values[entry] = { state, Reason::Override, entry };
+            for (auto const& [entry, candidate] : overrides)
+                values[entry] = candidate;
         };
 
         if (cfg.deriveFromSources)
@@ -981,12 +1017,12 @@ namespace RetailAH::Era
 
         // ---- 6. Manual overrides ----------------------------------------------------------------
         // Again here: floors (and a server without derived sources) never beat an override row.
-        for (auto const& [entry, state] : overrides)
+        for (auto const& [entry, candidate] : overrides)
         {
-            if (state == STATE_START)
+            if (candidate.state == STATE_START)
                 table->items.erase(entry);
             else
-                table->items[entry] = { state, Reason::Override, entry };
+                table->items[entry] = { candidate.state, candidate.reason, candidate.source };
         }
 
         std::array<uint32, STATE_MAX + 1> perState{};
@@ -1006,8 +1042,8 @@ namespace RetailAH::Era
             sTable = table;
         }
 
-        LOG_INFO("module", "mod-retail-ah: {} era-gated items ({} overrides) in {} ms. Per state:{}",
-            table->items.size(), overrides.size(), GetMSTimeDiffToNow(startTime), summary);
+        LOG_INFO("module", "mod-retail-ah: {} era-gated items ({} override rows, {} built-in fixes) in {} ms. Per state:{}",
+            table->items.size(), overrideRows, cfg.deriveFromSources ? std::size(DATA_FIXES) : 0, GetMSTimeDiffToNow(startTime), summary);
     }
 
     char const* StateName(uint8 state)
@@ -1042,6 +1078,7 @@ namespace RetailAH::Era
         switch (reason)
         {
             case Reason::Override:      return "override row, item";
+            case Reason::DataFix:       return "built-in loot data fix, item";
             case Reason::Creature:      return "dropped by creature";
             case Reason::GameObject:    return "looted from gameobject";
             case Reason::Fishing:       return "fished in area";

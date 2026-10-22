@@ -3,7 +3,8 @@
 --
 -- The module works out on its own which mod-individual-progression state unlocks each item (from
 -- where it drops, who sells it, which quest rewards it, which recipe crafts it). A row here
--- replaces that answer for one item:
+-- replaces that answer for the item, and what is crafted from it or comes out of it follows
+-- (unless their own expansion floor is higher):
 --   state = 0      always visible, whatever the module worked out
 --   state = 1..18  hidden until the player's progression state reaches it
 --                  (1 = Molten Core cleared, 3 = BWL cleared, 4 = AQ gates, 6 = AQ40 cleared,
