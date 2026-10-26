@@ -11,6 +11,10 @@
  * formula with the lowest roll gives the most the bot pays on every look, and the highest roll
  * the most it ever pays.
  *
+ * Reference buyer: when the bot's shared catalog answers AhBotPriceCatalog::BuyerOffer (BiS
+ * items, or every item it lists with the fork's Buyer.ReferencePricing), that fixed per-unit
+ * offer is the price instead, NPC-price caps included, and none of the mirrored formula runs.
+ *
  * This file mirrors CalculateItemValue and the buyer's checks from mod-ah-bot-plus (f685832,
  * July 2026), reading the bot's own AuctionHouseBot.* options with the same defaults, so
  * either module builds without the other. The float steps are kept as the bot writes them,

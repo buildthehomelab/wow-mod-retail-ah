@@ -23,7 +23,8 @@
  * - Traded: every auction of the item that sold in the last HISTORY_DAYS days, to anyone, read
  *   from the gold ledger at startup and kept up in memory since. Without the ledger only what
  *   sold since startup.
- * - flags 8: authoritative BiS buyer policy; craft profits should use bot pays, not reference.
+ * - flags 8: authoritative reference buyer policy (BiS items, or every quoted item with the bot's
+ *   Buyer.ReferencePricing); craft profits should use bot pays, not reference.
  * - flags 1: the era gate hides the item from this player and they own none, so no auction
  *   prices. The level gate doesn't apply: a crafter prices what they make, whatever level it
  *   needs. flags 2: it binds when picked up (or is a quest item), so it can't be auctioned.
