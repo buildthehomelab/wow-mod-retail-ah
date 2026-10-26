@@ -3,9 +3,11 @@
 -- only buyer on a small realm, so this is what an item sells for as it is or as dust and essences.
 --
 --   T:<req>:<entry>,<entry>,...  -> TD rows <entry>,<AH bot pays>,<disenchanted, AH bot pays>,
---                                           <enchanting needed>,<flags>
+--                                           <enchanting needed>,<flags>,<BiS left>,<BiS limit>,
+--                                           <BiS reset seconds>
 --                                   TE:<req>
 -- flags 1: can be disenchanted, 2: the player's Enchanting is high enough, 4: binds on pickup.
+-- BiS fields: the bot's daily limit on BiS buys (0,0,0 without one, or from an older module).
 -- See src/RetailAHTooltip.cpp. /rah tooltip turns the lines off and on.
 
 local RAH = RetailAH
@@ -13,6 +15,7 @@ local RAH = RetailAH
 local DISENCHANTABLE, CAN_DISENCHANT, SOULBOUND = 1, 2, 4
 local MAX_BATCH = 40
 local CACHE_SECONDS = 600
+local BIS_CACHE_SECONDS = 60 -- "left today" changes as the bot buys
 local TIMEOUT = 5
 
 local values = {}   -- entry -> { pays, disenchanted, skill, flags, at }
@@ -44,6 +47,7 @@ local function isBound(tip)
 end
 
 local GOLD_TEXT = { 1, 0.82, 0 }
+local BIS_TEXT = { 0.64, 0.21, 0.93 }
 local GREY_TEXT = { 0.5, 0.5, 0.5 }
 local BETTER = { 0.25, 1, 0.25 }
 local PLAIN = { 1, 1, 1 }
@@ -63,7 +67,11 @@ local function addLines(tip, v)
 	st.done = true
 	local pays = (bit.band(v.flags, SOULBOUND) == 0 and not isBound(tip)) and v.pays or 0
 	local disenchanted = bit.band(v.flags, DISENCHANTABLE) ~= 0 and v.disenchanted or 0
-	if pays == 0 and disenchanted == 0 then return false end
+	local bis, bisOpen
+	if bit.band(v.flags, SOULBOUND) == 0 and not isBound(tip) then
+		bis, bisOpen = RAH.BisBonusText(v.bisLeft, v.bisLimit, v.bisReset - (GetTime() - v.at))
+	end
+	if pays == 0 and disenchanted == 0 and not bis then return false end
 
 	-- Green marks the better of the two when both are there.
 	local both = pays > 0 and disenchanted > 0
@@ -77,6 +85,9 @@ local function addLines(tip, v)
 		local label = able and "Disenchant (AH bot)" or ("Disenchant |cff808080(Enchanting " .. v.skill .. ")|r")
 		addLine(tip, label, able and GOLD_TEXT or GREY_TEXT, "~" .. RAH.Money(disenchanted),
 			(both and disenchanted > pays) and BETTER or PLAIN)
+	end
+	if bis then
+		addLine(tip, "BiS bonus", bisOpen and BIS_TEXT or GREY_TEXT, bis, bisOpen and PLAIN or GREY_TEXT)
 	end
 	return true
 end
@@ -103,7 +114,8 @@ local function flush()
 				local entry = tonumber(r[1])
 				if entry then
 					values[entry] = { pays = tonumber(r[2]) or 0, disenchanted = tonumber(r[3]) or 0,
-						skill = tonumber(r[4]) or 0, flags = tonumber(r[5]) or 0, at = now }
+						skill = tonumber(r[4]) or 0, flags = tonumber(r[5]) or 0, bisLeft = tonumber(r[6]) or 0,
+						bisLimit = tonumber(r[7]) or 0, bisReset = tonumber(r[8]) or 0, at = now }
 				end
 			end
 			-- Fill in the tooltips that were waiting for these.
@@ -145,7 +157,7 @@ local function onSetItem(tip)
 	local entry = entryOf(link)
 	if not entry then return end
 	local v = values[entry]
-	if v and GetTime() - v.at < CACHE_SECONDS then
+	if v and GetTime() - v.at < (v.bisLimit > 0 and BIS_CACHE_SECONDS or CACHE_SECONDS) then
 		addLines(tip, v)
 	else
 		ask(entry)

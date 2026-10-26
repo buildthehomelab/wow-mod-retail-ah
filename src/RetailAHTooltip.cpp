@@ -4,7 +4,8 @@
  * bot for more as it is or as the materials disenchanting it gives.
  *
  *   T:<req>:<entry>,<entry>,...   at most MAX_ENTRIES
- *     -> TD rows <entry>,<AH bot pays>,<disenchanted, AH bot pays>,<enchanting needed>,<flags>
+ *     -> TD rows <entry>,<AH bot pays>,<disenchanted, AH bot pays>,<enchanting needed>,<flags>,
+ *                <BiS left>,<BiS limit>,<BiS reset seconds>
  *        TE:<req>
  *
  * - AH bot pays: per unit, what the buyer takes on every look (AhBot::BuyRange's `always`), 0
@@ -16,6 +17,8 @@
  * - Enchanting needed: the item's RequiredDisenchantSkill, 0 when it can't be disenchanted.
  * - flags 1: it can be disenchanted. 2: this player's Enchanting is high enough.
  *   4: it binds when picked up (or is a quest item), so it can't go to the auction house.
+ * - BiS left/limit/reset: the bot's BiS daily limit in the player's faction house (how many more
+ *   it buys today, the limit, seconds until the next UTC day); 0,0,0 when none applies.
  */
 
 #include "RetailAH.h"
@@ -176,8 +179,13 @@ namespace RetailAH::Tooltip
                 }
             }
 
+            uint32 bisLeft = 0, bisLimit = 0, bisReset = 0;
+            if (!(flags & ROW_SOULBOUND))
+                AhBot::BisDaily(proto, house, bisLeft, bisLimit, bisReset);
+
             rows.push_back(std::to_string(entry) + "," + std::to_string(pays) + "," + std::to_string(disenchanted) + ","
-                + std::to_string(skill) + "," + std::to_string(flags));
+                + std::to_string(skill) + "," + std::to_string(flags) + "," + std::to_string(bisLeft) + ","
+                + std::to_string(bisLimit) + "," + std::to_string(bisReset));
         }
 
         SendRows(player, "TD:" + ctx.req, rows);

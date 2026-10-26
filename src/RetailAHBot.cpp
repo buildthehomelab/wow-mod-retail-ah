@@ -11,6 +11,10 @@
  * formula with the lowest roll gives the most the bot pays on every look, and the highest roll
  * the most it ever pays.
  *
+ * Reference buyer: when the bot's shared catalog answers AhBotPriceCatalog::BuyerOffer (BiS
+ * items, or every item it lists with the fork's Buyer.ReferencePricing), that fixed per-unit
+ * offer is the price instead, NPC-price caps included, and none of the mirrored formula runs.
+ *
  * This file mirrors CalculateItemValue and the buyer's checks from mod-ah-bot-plus (f685832,
  * July 2026), reading the bot's own AuctionHouseBot.* options with the same defaults, so
  * either module builds without the other. The float steps are kept as the bot writes them,
@@ -495,7 +499,22 @@ namespace RetailAH::AhBot
         return upTo > 0;
     }
 
-    // V:<req>:<entry>   Answer: V:<req>:<always>:<up to>, per unit; 0:0 when the bot won't buy.
+    void BisDaily(ItemTemplate const* proto, AuctionHouseEntry const* house, uint32& left, uint32& limit,
+        uint32& resetSeconds)
+    {
+        left = limit = resetSeconds = 0;
+#ifdef AH_BOT_PRICE_CATALOG_BIS_DAILY_V1
+        if (proto && house && BuyerEnabled()
+            && !AhBotPriceCatalog::BisDaily(proto->ItemId, house->houseId, left, limit, resetSeconds))
+            left = limit = resetSeconds = 0;
+#else
+        (void)proto;
+        (void)house;
+#endif
+    }
+
+    // V:<req>:<entry>   Answer: V:<req>:<always>:<up to>:<BiS left>:<BiS limit>:<BiS reset seconds>,
+    // per unit; 0:0 when the bot won't buy. The BiS fields are 0 when no daily limit applies.
     void HandleValue(Context& ctx, std::vector<std::string_view> const& args)
     {
         uint32 entry = 0;
@@ -506,7 +525,11 @@ namespace RetailAH::AhBot
         }
 
         uint64 always = 0, upTo = 0;
-        BuyRange(sObjectMgr->GetItemTemplate(entry), always, upTo, ctx.houseEntry);
-        Send(ctx.player, "V:" + ctx.req + ":" + std::to_string(always) + ":" + std::to_string(upTo));
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+        BuyRange(proto, always, upTo, ctx.houseEntry);
+        uint32 left = 0, limit = 0, reset = 0;
+        BisDaily(proto, ctx.houseEntry, left, limit, reset);
+        Send(ctx.player, "V:" + ctx.req + ":" + std::to_string(always) + ":" + std::to_string(upTo) + ":"
+            + std::to_string(left) + ":" + std::to_string(limit) + ":" + std::to_string(reset));
     }
 }

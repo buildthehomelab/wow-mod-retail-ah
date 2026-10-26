@@ -22,6 +22,7 @@ local state = {
 	depositReq = nil,
 	lowest = nil,       -- cheapest competing price, per unit for commodities
 	bot = nil,          -- { always, upTo }: what the AH buyer bot pays per unit, if it buys this
+	bis = nil,          -- { left, limit, resetAt }: the bot's BiS daily limit for this item, if any
 	botReq = nil,
 	botKnown = false,   -- the bot price answered (or failed, or the server has none)
 	listingsKnown = false,
@@ -32,7 +33,8 @@ local state = {
 local DURATIONS = { 12, 24, 48 }
 
 -- Bot prices answered this visit, entry -> { always, upTo } or false (the bot doesn't buy it),
--- so picking an item again fills the price at once, without spending a request.
+-- so picking an item again fills the price at once, without spending a request. BiS items with a
+-- daily limit aren't kept: how many the bot still takes changes as it buys.
 local botCache = {}
 
 -- The server's "bag" for addressing a commodity by entry, so it can come from the reagent bank.
@@ -270,16 +272,26 @@ end
 botLine:SetScript("OnClick", function () local p = botPrice() if p then setPrice(p) end end)
 botLine:SetScript("OnEnter", function (self)
 	local bot = state.bot
-	if not bot then return end
+	if not bot and not state.bis then return end
 	local per = state.item and state.item.commodity and " each" or ""
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
 	GameTooltip:AddLine("AH buyer bot")
-	if bot.always > 0 then
+	if bot and bot.always > 0 then
 		GameTooltip:AddLine("Buys out at " .. RAH.Money(bot.always) .. per .. " or less every time it looks.", 1, 1, 1, true)
 	end
-	if bot.upTo > bot.always then
+	if bot and bot.upTo > bot.always then
 		GameTooltip:AddLine("Up to " .. RAH.Money(bot.upTo) .. per .. " if it rolls high, so sometimes.", 1, 1, 1, true)
 	end
+	local bis = state.bis
+	if bis then
+		local text, open = RAH.BisBonusText(bis.left, bis.limit, bis.resetAt - GetTime())
+		GameTooltip:AddLine("BiS bonus: " .. text, 0.64, 0.21, 0.93)
+		GameTooltip:AddLine("Crafted best-in-slot items sell to the bot for their cost plus a BiS premium, but it only buys "
+			.. bis.limit .. " of each a day in this auction house, shared by everyone. "
+			.. (open and "Bot bids and buys count; the day resets at midnight UTC."
+				or "Until it resets (midnight UTC) it doesn't buy this item; players still can."), 1, 1, 1, true)
+	end
+	if not bot then GameTooltip:Show() return end
 	GameTooltip:AddLine("It checks a few auctions every few minutes, so a sale can take a while. Players may pay more.", 0.7, 0.7, 0.7, true)
 	GameTooltip:AddLine("Click to use the sure price.", 0, 1, 0)
 	if savedPrice(state.item) then
@@ -343,13 +355,21 @@ auctionList:SetPoint("BOTTOMRIGHT", listingPane, "BOTTOMRIGHT", -4, 4)
 
 -- Shows or hides the bot line, making room for it above the listings.
 local function updateBotLine()
-	local bot = state.bot
+	local bot, bis = state.bot, state.bis
 	local top = -28
-	if bot and state.item then
+	if (bot or bis) and state.item then
 		local per = state.item.commodity and " each" or ""
-		local text = "|cff4fc3f7AH buyer pays:|r " .. RAH.Money(botPrice()) .. per
-		if bot.always > 0 and bot.upTo > bot.always then
-			text = text .. "  |cff808080(sometimes up to " .. RAH.Money(bot.upTo) .. ")|r"
+		local text
+		if bot then
+			text = "|cff4fc3f7AH buyer pays:|r " .. RAH.Money(botPrice()) .. per
+			if bot.always > 0 and bot.upTo > bot.always then
+				text = text .. "  |cff808080(sometimes up to " .. RAH.Money(bot.upTo) .. ")|r"
+			end
+		end
+		if bis then
+			local bisText, open = RAH.BisBonusText(bis.left, bis.limit, bis.resetAt - GetTime())
+			local line = (open and "|cffa335ee" or "|cff808080") .. "BiS bonus: " .. bisText .. "|r"
+			text = text and (text .. "  " .. line) or line
 		end
 		botText:SetText(text)
 		botLine:Show()
@@ -363,6 +383,16 @@ local function updateBotLine()
 		list:SetPoint("BOTTOMRIGHT", listingPane, "BOTTOMRIGHT", -4, 4)
 	end
 end
+
+-- Keep the BiS reset countdown current while the tab stays open.
+local bisElapsed = 0
+botLine:SetScript("OnUpdate", function (_, elapsed)
+	if not state.bis then return end
+	bisElapsed = bisElapsed + elapsed
+	if bisElapsed < 30 then return end
+	bisElapsed = 0
+	updateBotLine()
+end)
 auctionList:Hide()
 
 -----------------------------------------
@@ -564,6 +594,7 @@ end
 local function loadBotPrice()
 	local item = state.item
 	state.bot = nil
+	state.bis = nil
 	state.botReq = nil
 	state.botKnown = false
 	updateBotLine()
@@ -571,8 +602,9 @@ local function loadBotPrice()
 		state.botKnown = true
 		return
 	end
-	local function known(bot)
+	local function known(bot, bis)
 		state.bot = bot or nil
+		state.bis = bis
 		state.botKnown = true
 		updateBotLine()
 		defaultPrice()
@@ -598,8 +630,11 @@ local function loadBotPrice()
 			end
 			local always, upTo = tonumber(result[1]) or 0, tonumber(result[2]) or 0
 			local bot = upTo > 0 and { always = always, upTo = upTo } or false
-			botCache[item.entry] = bot
-			known(bot)
+			-- Older modules answer only the first two.
+			local left, limit, reset = tonumber(result[3]) or 0, tonumber(result[4]) or 0, tonumber(result[5]) or 0
+			local bis = limit > 0 and { left = left, limit = limit, resetAt = GetTime() + reset } or nil
+			if not bis then botCache[item.entry] = bot end
+			known(bot, bis)
 		end)
 	end
 	ask(true)
@@ -675,6 +710,7 @@ function Sell.Clear()
 	state.listingsReq = nil
 	state.depositReq = nil
 	state.bot = nil
+	state.bis = nil
 	state.botReq = nil
 	updateBotLine()
 	showForm(nil)

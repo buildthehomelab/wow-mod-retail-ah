@@ -80,7 +80,16 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   even when no player is around to buy it. Players can still buy it, and may pay more. If the
   bot sometimes pays more (its price has a random part), the line says how much. Click the line
   to put the bot's price back. Items vendors sell are left out; the bot only pays vendor price
-  for them.
+  for them. With the fork's `AuctionHouseBot.Buyer.ReferencePricing.Enabled` (and
+  `Seller.StablePrices`) the bot instead pays one fixed price: a share (`MarketPercent`, default
+  80) of what it lists the item for, or for crafted items of what they cost to make, and never
+  more than that share of an NPC's price (so vendor items show too). The line shows that price,
+  and craft profits use it when selling to the bot. Crafted BiS items pay their cost with the
+  BiS premium, but only a few a day per item (the fork's `Buyer.ProgressionPricing.DailyLimit`,
+  default 2 per house). The Sell tab line and item tooltips say so: **BiS bonus: 1 of 2 left
+  today**, and once the day's limit is used up, **BiS bonus: used up, resets in 5h 12m** (the bot
+  doesn't buy the item until the next UTC day). Hovering the Sell tab line explains it. The count
+  is per house and shared by everyone.
 - **Your own price is remembered**: post an item at a price you set (typed, or matched from a
   listing) and the next post of that item starts at it, marked *your last price*. Posting at
   the bot's price again (click the AH buyer line) forgets it, and `/rah prices` forgets all of

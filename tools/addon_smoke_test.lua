@@ -297,6 +297,7 @@ end
 local busyOnce = {}
 local busyAlways = {}  -- commands the server keeps refusing as busy
 local tooltipOld
+local bisUsedUp -- the bot's BiS daily limit for the shortsword is used up
 local function serve(msg)
 	local cmd, req = msg:match("^([^:]+):([^:]*)")
 	print("  -> " .. msg)
@@ -337,7 +338,13 @@ local function serve(msg)
 		end
 		reply("ND:" .. req .. ":" .. table.concat(rows, ";"))
 		reply("NE:" .. req)
-	elseif cmd == "V" then reply("V:" .. req .. ":1234:1800")
+	elseif cmd == "V" then
+		-- The shortsword stands in for a BiS item under the bot's daily limit.
+		if msg:match("^V:%d+:15210$") then
+			reply("V:" .. req .. (bisUsedUp and ":0:0:0:2:18720" or ":1234:1800:1:2:3600"))
+		else
+			reply("V:" .. req .. ":1234:1800")
+		end
 	elseif cmd == "T" then
 		if tooltipOld then reply("ERR:" .. req .. ":far") return end
 		local rows = {}
@@ -345,7 +352,10 @@ local function serve(msg)
 			-- Linen sells to the bot; the shortsword disenchants for more than it sells for,
 			-- at Enchanting 25 the player doesn't have.
 			if token == "2589" then table.insert(rows, "2589,12,0,0,0")
-			elseif token == "15210" then table.insert(rows, "15210,5000,8000,25,1") end
+			elseif token == "15210" then table.insert(rows, "15210,5000,8000,25,1")
+			-- BiS under the bot's daily limit: one buy left today, then used up.
+			elseif token == "12640" then table.insert(rows, "12640,880000,0,0,0,1,2,3600")
+			elseif token == "12641" then table.insert(rows, "12641,0,0,0,0,0,2,18720") end
 		end
 		reply("TD:" .. req .. ":" .. table.concat(rows, ";"))
 		reply("TE:" .. req)
@@ -745,6 +755,27 @@ step("bot price: suggested and shown", function ()
 	local priceBox = find(function (f) return rawget(f, "__copper") == 1234 end)
 	assert(priceBox, "price box not set to the bot's sure price")
 end)
+step("bot price: BiS bonus left today, then used up", function ()
+	local function line(pattern)
+		return find(function (f) return f.__kind == "FontString" and f.__text:find(pattern, 1, true) end)
+	end
+	RAH.Sell.Select(0, 3)
+	tick(0.5)
+	local shown = line("BiS bonus: 1 of 2 left today")
+	assert(shown and shown.__text:find("AH buyer pays", 1, true), "no BiS bonus next to the bot price")
+	bisUsedUp = true
+	RAH.Sell.Select(0, 1)
+	tick(0.5)
+	RAH.Sell.Select(0, 3) -- BiS answers aren't cached: asks again
+	tick(0.5)
+	shown = line("BiS bonus: used up, resets in 5h 12m")
+	assert(shown, "no used-up BiS line")
+	assert(not shown.__text:find("AH buyer pays", 1, true), "bot price shown although it doesn't buy today: " .. shown.__text)
+	print("  " .. shown.__text)
+	bisUsedUp = nil
+	RAH.Sell.Select(0, 1)
+	tick(0.5)
+end)
 step("own sell price: remembered, then forgotten", function ()
 	local priceBox = find(function (f) return rawget(f, "__copper") == 1234 end)
 	local function post()
@@ -911,6 +942,18 @@ step("item tooltip: AH bot price, stack total, disenchanted value", function ()
 	assert(not GameTooltip:Text():find("AH bot"), "shown although turned off")
 	SlashCmdList.RETAILAH("tooltip")
 	assert(not RetailAHDB.noTooltip, "toggle did not turn it back on")
+
+	-- BiS items under the bot's daily limit.
+	GameTooltip:SetHyperlink("item:12640")
+	tick(0.5)
+	text = GameTooltip:Text()
+	assert(text:find("AH bot buys", 1, true) and text:find("BiS bonus | 1 of 2 left today", 1, true), "no BiS bonus line:\n" .. text)
+	GameTooltip:SetHyperlink("item:12641")
+	tick(0.5)
+	text = GameTooltip:Text()
+	assert(not text:find("AH bot buys", 1, true) and text:find("BiS bonus | used up, resets in 5h 12m", 1, true),
+		"no used-up BiS line:\n" .. text)
+	print("  " .. text:gsub("\n", "\n  "))
 
 	-- A module from before tooltips: one refusal, then no more asking this session.
 	tooltipOld = true
