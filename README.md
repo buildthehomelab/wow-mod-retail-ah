@@ -84,7 +84,10 @@ other modules keep working, because every auction is still an ordinary AzerothCo
   `Seller.StablePrices`) the bot instead pays one fixed price: a share (`MarketPercent`, default
   80) of what it lists the item for, or for crafted items of what they cost to make, and never
   more than that share of an NPC's price (so vendor items show too). The line shows that price,
-  and craft profits use it when selling to the bot.
+  and craft profits use it when selling to the bot. Crafted BiS items pay their cost with the
+  BiS premium, but only a few a day per item (the fork's `Buyer.ProgressionPricing.DailyLimit`,
+  default 2 per house); once that day's limit is reached the line shows no bot price until the
+  next day (UTC).
 - **Your own price is remembered**: post an item at a price you set (typed, or matched from a
   listing) and the next post of that item starts at it, marked *your last price*. Posting at
   the bot's price again (click the AH buyer line) forgets it, and `/rah prices` forgets all of
