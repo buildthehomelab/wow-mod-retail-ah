@@ -287,7 +287,7 @@ namespace RetailAH
                 return;
             }
 
-            // Item tooltips, anywhere. Template lookups only, so a quarter of a request.
+            // Item tooltips, anywhere. Template lookups and cached bot quotes, so a quarter of a request.
             if (command == "T")
             {
                 if (!sConfig.tooltip)

@@ -109,6 +109,17 @@ function RAH.Number(n)
 	return thousands(floor(tonumber(n) or 0))
 end
 
+-- The AH bot's BiS daily limit (crafted BiS sells to it with a bonus, a few a day): the text,
+-- and whether it still buys today. Nil without a limit.
+function RAH.BisBonusText(left, limit, resetIn)
+	if not limit or limit <= 0 then return nil end
+	if (left or 0) > 0 then return left .. " of " .. limit .. " left today", true end
+	-- Plain hours and minutes: TimeLeft's colours would end the grey early.
+	local minutes = math.min(24 * 60, math.max(1, math.ceil((resetIn or 0) / 60)))
+	local text = minutes >= 60 and string.format("%dh %dm", floor(minutes / 60), minutes % 60) or (minutes .. "m")
+	return "used up, resets in " .. text, false
+end
+
 function RAH.TimeLeft(seconds)
 	seconds = tonumber(seconds) or 0
 	if seconds <= 0 then return "|cff808080--|r" end

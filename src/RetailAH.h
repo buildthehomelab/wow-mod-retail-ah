@@ -321,6 +321,10 @@ namespace RetailAH
         // `upTo` on its luckiest roll. False when it never buys this item.
         bool BuyRange(ItemTemplate const* proto, uint64& always, uint64& upTo,
             AuctionHouseEntry const* house = nullptr, bool* referenceBuyer = nullptr);
+        // The bot's BiS daily limit for an item in this house: how many more it buys today, the
+        // limit, and seconds until it resets (next UTC day). All 0 when no limit applies.
+        void BisDaily(ItemTemplate const* proto, AuctionHouseEntry const* house, uint32& left, uint32& limit,
+            uint32& resetSeconds);
         void HandleValue(Context& ctx, std::vector<std::string_view> const& args);
     }
 
