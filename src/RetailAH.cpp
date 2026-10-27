@@ -166,12 +166,16 @@ namespace RetailAH
             return true;
         }
 
-        // The same gate the stock window passes through before it can open.
+        // The same gate the stock window passes through before it can open, scripts included (a
+        // module can keep a player away from the auction house there).
         Creature* GetAuctioneer(Player* player, ObjectGuid guid)
         {
             if (!guid || player->GetLevel() < sWorld->getIntConfig(CONFIG_AUCTION_LEVEL_REQ))
                 return nullptr;
-            return player->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER);
+            Creature* auctioneer = player->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER);
+            if (!auctioneer || !sScriptMgr->CanSendAuctionHello(player->GetSession(), guid, auctioneer))
+                return nullptr;
+            return auctioneer;
         }
 
         bool FillContext(Player* player, Creature* auctioneer, Context& ctx)
@@ -195,13 +199,6 @@ namespace RetailAH
             if (!auctioneer || !FillContext(player, auctioneer, ctx))
             {
                 ctx.player = player;
-                SendError(ctx, "far");
-                return;
-            }
-
-            // The same gate the stock window's hello passes through.
-            if (!sScriptMgr->CanSendAuctionHello(player->GetSession(), guid, auctioneer))
-            {
                 SendError(ctx, "far");
                 return;
             }
