@@ -237,7 +237,7 @@ namespace
         wstrToLower(wsearchedname);
 
         Creature* creature = player->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER);
-        if (!creature)
+        if (!creature || !sScriptMgr->CanSendAuctionHello(player->GetSession(), guid, creature))
             return false;
 
         if (player->HasUnitState(UNIT_STATE_DIED))
