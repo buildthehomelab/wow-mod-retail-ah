@@ -98,7 +98,7 @@ namespace RetailAH::CraftPrices
     void Load()
     {
         sVendorItems.clear();
-        if (QueryResult result = WorldDatabase.Query("SELECT DISTINCT item FROM npc_vendor WHERE maxcount = 0 AND ExtendedCost = 0"))
+        if (QueryResult result = WorldDatabase.Query("SELECT DISTINCT item FROM npc_vendor WHERE item > 0 AND maxcount = 0 AND ExtendedCost = 0"))
         {
             do
                 sVendorItems.insert(result->Fetch()[0].Get<uint32>());
